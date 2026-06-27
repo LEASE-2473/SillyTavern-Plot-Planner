@@ -1,5 +1,5 @@
 // ========================================================================
-// 剧情规划器 (Plot Planner) v2.0.1
+// 剧情规划器 (Plot Planner) v2.0.2
 // SillyTavern 第三方扩展 - RPG任务流式剧情管理 (含破限与多配置)
 // ========================================================================
 (function () {
@@ -12,7 +12,7 @@
     }
     window.PlotPlannerLoaded = true;
 
-    console.log('🗺️ 剧情规划器 v2.0.1 启动');
+    console.log('🗺️ 剧情规划器 v2.0.2 启动');
 
     // ===== 内部状态 =====
     let isModalOpen = false;
@@ -40,6 +40,57 @@
     };
     const COMPLETION_TAG_REGEX = /<\/?\s*(?:complete|questcomplete|plot[-_\s]?complete)\s*\/?>/i;
     const COMPLETION_TAG_STRIP_REGEX = /<\/?\s*(?:complete|questcomplete|plot[-_\s]?complete)\s*\/?>/gi;
+    const DEFAULT_PLANNING_SYSTEM_PROMPT = '你是一个专业的 RPG 跑团向剧情策划师。请根据玩家要求、角色设定和聊天上下文，生成可商讨、可执行、带有阶段推进感的剧情规划。不要输出无关废话。';
+    const DEFAULT_BREAKDOWN_SYSTEM_PROMPT = `你是 Plot Planner 的任务拆解器，只负责把已经敲定的剧情规划转换成可执行任务 JSON。
+
+要求：
+1. 只依据用户提供的“最终敲定的剧情规划”拆解，不要补充世界书、聊天记录或额外设定。
+2. 输出必须是合法 JSON，不要 Markdown、代码块、解释、前后缀。
+3. JSON 顶层必须是 {"tasks":[...]}。
+4. 每个任务必须包含 title、summary、completionCriteria 三个字符串字段。
+5. summary 要写成可发送给主聊天 AI 的当前剧情节点说明，包含目标、冲突/阻碍、可互动行动和边界。
+6. completionCriteria 必须是能从主聊天 AI 回复中客观观察到的完成事实，并提醒完成时在回复末尾输出 <complete>。
+7. 任务必须线性衔接；当前任务不要提前完成后续任务。`;
+    const BREAKDOWN_REPAIR_SYSTEM_PROMPT = `你是 JSON 格式修复器。请把上一次任务拆解输出修复为合法 JSON。
+
+要求：
+1. 只输出 JSON，不要 Markdown、代码块、解释、前后缀。
+2. JSON 顶层必须是 {"tasks":[...]}。
+3. 每个任务必须包含 title、summary、completionCriteria 三个字符串字段。
+4. 不要改变原剧情含义，只修复结构、字段和缺失的完成条件。`;
+    const PLOT_OUTLINE_FORMAT_PROMPT = `请严格使用以下固定格式输出剧情规划，方便后续拆解：
+
+【主线标题】
+用一句话概括这条大型剧情任务。
+
+【总体目标】
+说明这条主线最终要达成什么。
+
+【核心冲突】
+说明主要矛盾、阻碍、风险或情感张力。
+
+【关键角色与关系】
+列出本剧情中最重要的角色、立场、关系变化。
+
+【阶段规划】
+阶段一：
+- 阶段目标：
+- 关键冲突：
+- 主要事件：
+- 玩家/角色可互动点：
+- 阶段完成标志：
+
+阶段二：
+- 阶段目标：
+- 关键冲突：
+- 主要事件：
+- 玩家/角色可互动点：
+- 阶段完成标志：
+
+（按需要继续阶段三、阶段四……）
+
+【结局或收束方向】
+说明剧情如何收束，或保留哪些后续钩子。`;
     const TASK_SCHEMA = {
         name: 'plot_planner_tasks',
         description: 'Ordered plot tasks',
@@ -133,7 +184,7 @@
                     <!-- 提示词预设 -->
                     <div class="plot-planner-config" style="margin-bottom: 10px;">
                         <div class="config-row">
-                            <label>预设模板 (Prompt):</label>
+                            <label>剧情规划模板:</label>
                             <select id="plot-planner-prompt-template" style="flex:1;">
                                 <option value="custom">-- 自定义 --</option>
                             </select>
@@ -141,9 +192,14 @@
                             <button id="plot-planner-prompt-del" class="plot-btn warning-btn" style="margin-left: 5px; display:none;">🗑️</button>
                         </div>
                         <div class="config-row" style="align-items: flex-start; margin-top: 5px;">
-                            <label>系统提示词:</label>
-                            <textarea id="plot-planner-system-prompt" style="flex:1; height: 80px; background: #121215; border: 1px solid #333; color: #fff; padding: 8px; border-radius: 4px; resize: vertical;" placeholder="在此输入自定义的大模型系统提示词，可包含破限指令。"></textarea>
+                            <label>剧情内容提示词:</label>
+                            <textarea id="plot-planner-system-prompt" style="flex:1; height: 80px; background: #121215; border: 1px solid #333; color: #fff; padding: 8px; border-radius: 4px; resize: vertical;" placeholder="用于生成和商讨剧情大纲，可自定义并保存。"></textarea>
                         </div>
+                        <div class="config-row" style="align-items: flex-start; margin-top: 5px;">
+                            <label>子任务拆解提示词:</label>
+                            <textarea id="plot-planner-breakdown-prompt" style="flex:1; height: 110px; background: #121215; border: 1px solid #333; color: #fff; padding: 8px; border-radius: 4px; resize: vertical;" placeholder="专门用于把最终剧情大纲转换成 JSON 子任务。拆解请求只会发送此提示词和最终大纲。"></textarea>
+                        </div>
+                        <div style="font-size: 0.8rem; color: #888; margin-top: 5px;">说明：剧情规划提示词会结合上下文生成固定格式大纲；子任务拆解提示词只处理最终大纲，不会再次发送世界书/聊天等长上下文。</div>
                     </div>
 
                     <!-- 剧情参数 -->
@@ -341,9 +397,15 @@
                     key: '',
                     model: '',
                     promptId: 'default_safe',
-                    systemPrompt: builtInPrompts.find(p=>p.id==='default_safe')?.prompt || ""
+                    systemPrompt: builtInPrompts.find(p=>p.id==='default_safe')?.prompt || DEFAULT_PLANNING_SYSTEM_PROMPT,
+                    breakdownPrompt: DEFAULT_BREAKDOWN_SYSTEM_PROMPT
                 }];
             }
+            apiProfiles = apiProfiles.map(profile => ({
+                ...profile,
+                systemPrompt: profile.systemPrompt || DEFAULT_PLANNING_SYSTEM_PROMPT,
+                breakdownPrompt: profile.breakdownPrompt || DEFAULT_BREAKDOWN_SYSTEM_PROMPT
+            }));
             const lastId = localStorage.getItem('plotPlannerLastProfile');
             if (lastId && apiProfiles.find(p => p.id === lastId)) {
                 currentProfileId = lastId;
@@ -459,6 +521,7 @@
         p.model = $('#plot-planner-api-model').is(':visible') ? $('#plot-planner-api-model').val() : $('#plot-planner-api-model-select').val();
         p.promptId = $('#plot-planner-prompt-template').val();
         p.systemPrompt = $('#plot-planner-system-prompt').val();
+        p.breakdownPrompt = $('#plot-planner-breakdown-prompt').val();
 
         localStorage.setItem('plotPlannerProfiles', JSON.stringify(apiProfiles));
         localStorage.setItem('plotPlannerLastProfile', currentProfileId);
@@ -480,8 +543,9 @@
         $('#plot-planner-api-model').show().val(p.model || '');
         
         $('#plot-planner-prompt-template').val(p.promptId || 'custom');
-        $('#plot-planner-system-prompt').val(p.systemPrompt || '');
         onTemplateChange();
+        $('#plot-planner-system-prompt').val(p.systemPrompt || $('#plot-planner-system-prompt').val() || DEFAULT_PLANNING_SYSTEM_PROMPT);
+        $('#plot-planner-breakdown-prompt').val(p.breakdownPrompt || DEFAULT_BREAKDOWN_SYSTEM_PROMPT);
         localStorage.setItem('plotPlannerLastProfile', currentProfileId);
     }
 
@@ -498,7 +562,8 @@
             key: '',
             model: '',
             promptId: 'custom',
-            systemPrompt: builtInPrompts.find(p=>p.id==='default_safe')?.prompt || ""
+            systemPrompt: builtInPrompts.find(p=>p.id==='default_safe')?.prompt || DEFAULT_PLANNING_SYSTEM_PROMPT,
+            breakdownPrompt: DEFAULT_BREAKDOWN_SYSTEM_PROMPT
         });
         currentProfileId = newId;
         renderProfileDropdown();
@@ -804,8 +869,8 @@
     // ===== 调用 LLM =====
     async function callLLM(promptText, options = {}) {
         const mode = $('#plot-planner-api-mode').val();
-        let systemPrompt = $('#plot-planner-system-prompt').val().trim();
-        if (!systemPrompt) systemPrompt = "你是一个专业的 RPG 跑团向剧情策划大师。请构思剧情大纲或任务拆解。不要输出不相关的废话。";
+        let systemPrompt = String(options.systemPrompt ?? $('#plot-planner-system-prompt').val() ?? '').trim();
+        if (!systemPrompt) systemPrompt = DEFAULT_PLANNING_SYSTEM_PROMPT;
 
         if (activeRequest) throw new Error('已有一个剧情规划请求正在进行');
         const request = { controller: new AbortController(), cancelled: false };
@@ -914,71 +979,22 @@
         }
     }
 
-    function normalizeTaskFromText(block, index) {
-        const lines = String(block || '')
-            .split('\n')
-            .map(line => line.trim())
-            .filter(Boolean);
-        const rawTitle = lines[0] || `任务 ${index + 1}`;
-        const title = rawTitle
-            .replace(/^[-*#\s]*/, '')
-            .replace(/^(?:step|任务|阶段|节点)\s*[\d一二三四五六七八九十]+[：:.\-\s]*/i, '')
-            .replace(/^【(.+)】$/, '$1')
-            .trim() || `任务 ${index + 1}`;
-        const body = lines.slice(1).join('\n') || String(block || '').trim();
-        const criteriaMatch = body.match(/(?:完成条件|判定条件|completionCriteria)\s*[：:]\s*([\s\S]*)/i);
-        const summary = criteriaMatch
-            ? body.slice(0, criteriaMatch.index).trim()
-            : body.trim();
-        const completionCriteria = criteriaMatch
-            ? criteriaMatch[1].trim()
-            : '该节点的核心事件已经在角色回复中明确发生，且没有只停留在计划或预告。';
-
-        return {
-            title,
-            summary: summary || body || title,
-            completionCriteria
-        };
-    }
-
     function parseTaskBreakdownResponse(response) {
-        let parsed = null;
-        try {
-            parsed = parseJsonResponse(response);
-        } catch (error) {
-            console.warn('[PlotPlanner] JSON 解析失败，尝试按文本任务列表解析。', error);
+        const parsed = parseJsonResponse(response);
+        if (!parsed || !Array.isArray(parsed.tasks)) {
+            throw new Error('模型没有返回 {"tasks":[...]} 结构');
         }
 
-        if (Array.isArray(parsed)) {
-            parsed = { tasks: parsed };
-        }
-        if (parsed && Array.isArray(parsed.tasks)) {
-            return parsed.tasks.map((task, index) => {
-                if (typeof task === 'string') return normalizeTaskFromText(task, index);
-                return {
-                    title: String(task?.title || `任务 ${index + 1}`).trim(),
-                    summary: String(task?.summary || task?.description || task?.content || '').trim(),
-                    completionCriteria: String(task?.completionCriteria || task?.criteria || task?.completion || '').trim()
-                };
-            });
-        }
+        const tasks = parsed.tasks.map((task, index) => ({
+            title: String(task?.title || `任务 ${index + 1}`).trim(),
+            summary: String(task?.summary || '').trim(),
+            completionCriteria: String(task?.completionCriteria || '').trim()
+        })).filter(task => task.title && task.summary && task.completionCriteria);
 
-        const text = String(response || '').trim();
-        if (!text) return [];
-        const blocks = text
-            .split(/\n(?=\s*(?:#{1,6}\s*)?(?:[-*]\s*)?(?:Step\s*\d+|任务\s*[\d一二三四五六七八九十]+|阶段\s*[\d一二三四五六七八九十]+|节点\s*[\d一二三四五六七八九十]+)[：:.\-\s])/i)
-            .map(block => block.trim())
-            .filter(Boolean);
-
-        if (blocks.length > 1) {
-            return blocks.map(normalizeTaskFromText);
+        if (tasks.length === 0) {
+            throw new Error('模型返回的任务缺少 title、summary 或 completionCriteria');
         }
-
-        const bulletBlocks = text
-            .split(/\n(?=\s*(?:[-*]|\d+[.)、])\s+)/)
-            .map(block => block.trim())
-            .filter(Boolean);
-        return bulletBlocks.length > 1 ? bulletBlocks.map(normalizeTaskFromText) : [];
+        return tasks;
     }
 
     async function callStructuredLLM(promptText, jsonSchema, options = {}) {
@@ -993,6 +1009,29 @@
         }
     }
 
+    async function repairTaskJson(rawResponse) {
+        const prompt = `请修复下面这段任务拆解输出，使它变成合法 JSON，并符合指定结构。
+
+【指定结构】
+{
+  "tasks": [
+    {
+      "title": "简短任务标题",
+      "summary": "当前剧情节点说明，包含目标、冲突/阻碍、可互动行动和边界。",
+      "completionCriteria": "可观察完成条件；完成时在回复末尾输出 <complete>。"
+    }
+  ]
+}
+
+【需要修复的输出】
+${String(rawResponse || '')}`;
+        return callStructuredLLM(prompt, TASK_SCHEMA, {
+            temperature: 0,
+            responseLength: 2048,
+            systemPrompt: BREAKDOWN_REPAIR_SYSTEM_PROMPT
+        });
+    }
+
     // ===== 阶段1: 生成草案 =====
     async function handleGenerateDraft() {
         saveCurrentProfile(); // 点击生成时自动保存一下当前配置
@@ -1005,9 +1044,10 @@
             $('#plot-context-summary').text(plotContext.summary);
             $('#plot-context-preview-text').text(plotContext.text || '当前选项没有收集到内容。');
 
-            let prompt = `请基于以下剧情上下文，为接下来的剧情生成可继续商讨的大纲草案。\n\n${plotContext.text || '【剧情上下文】无'}\n\n`;
+            let prompt = `请基于以下剧情上下文，为接下来的剧情生成一份可继续商讨的固定格式剧情规划。\n\n${plotContext.text || '【剧情上下文】无'}\n\n`;
             if (direction) prompt += `【玩家要求的方向或结局】\n${direction}\n\n`;
-            prompt += `请规划大约 ${nodeCount} 个阶段。说明每个阶段的目标、冲突、转折和与既有设定的联系，但暂时不要输出 JSON。`;
+            prompt += `【期望阶段数量】\n大约 ${nodeCount} 个阶段。\n\n`;
+            prompt += `${PLOT_OUTLINE_FORMAT_PROMPT}\n\n请只输出上述固定格式的剧情规划，不要输出 JSON。`;
 
             const response = await callLLM(prompt);
             currentDraft = response;
@@ -1040,6 +1080,7 @@
                 `${message.role === 'user' ? '玩家' : '规划器'}：${message.content}`
             ).join('\n\n');
             const prompt = `请修改当前剧情大纲。必须保留未被修改意见否定的有效内容，并返回一份完整的最新版大纲。
+必须继续使用固定格式，不能改成 JSON，也不能只回复局部修改。
 
 【当前大纲】
 ${currentDraft}
@@ -1048,7 +1089,10 @@ ${currentDraft}
 ${recentDiscussion}
 
 【本轮修改意见】
-${text}`;
+${text}
+
+【固定格式要求】
+${PLOT_OUTLINE_FORMAT_PROMPT}`;
             const response = await callLLM(prompt);
             currentDraft = response;
             appendMiniChat('ai', response);
@@ -1066,32 +1110,38 @@ ${text}`;
         try {
             setBusyButton('#plot-planner-breakdown', true, '拆解中...');
             const nodeCount = Math.max(1, Math.min(10, Number($('#plot-planner-node-count').val()) || 3));
-            const prompt = `你要把“剧情大纲”拆成可逐步发送给 SillyTavern 主聊天 AI 执行的 RPG 任务链。
+            const breakdownSystemPrompt = $('#plot-planner-breakdown-prompt').val().trim() || DEFAULT_BREAKDOWN_SYSTEM_PROMPT;
+            const prompt = `请把下面“最终敲定的剧情规划”转换成可逐步发送给 SillyTavern 主聊天 AI 执行的任务 JSON。
 
-拆解原则：
-1. 整体剧情像大型 RPG 主线任务，每个子任务必须是一个明确、可扮演、可推进的小剧情节点。
-2. 子任务之间必须线性衔接；当前任务只推进当前节点，不要把后续节点提前完成。
-3. 预计拆成 ${nodeCount} 个左右任务；如果大纲天然需要，可以少量增减，但不要拆成空泛段落。
-4. 每个 summary 必须写清楚：本节点目标、关键冲突/阻碍、玩家或角色可互动的行动、不能越过的边界。
-5. 每个 completionCriteria 必须是主聊天 AI 回复里能观察到的完成事实，不要写“氛围足够”“关系推进”这种无法判断的条件。
-6. completionCriteria 最后提醒主聊天 AI：当且仅当本节点真正完成时，在回复末尾输出 <complete>。
-7. 不要输出 Markdown、解释、前后缀或代码块，只输出 JSON。
+【期望任务数量】
+大约 ${nodeCount} 个任务；如果剧情天然需要，可以少量增减。
 
-JSON 结构必须是：
+【必须返回的 JSON 结构】
 {
   "tasks": [
     {
       "title": "简短任务标题",
-      "summary": "本节点目标、冲突、互动行动、边界。",
+      "summary": "当前剧情节点说明，包含目标、冲突/阻碍、可互动行动和边界。",
       "completionCriteria": "可观察完成条件；完成时在回复末尾输出 <complete>。"
     }
   ]
 }
 
-【剧情大纲】
+【最终敲定的剧情规划】
 ${currentDraft}`;
-            const response = await callStructuredLLM(prompt, TASK_SCHEMA, { temperature: 0.3 });
-            const tasks = parseTaskBreakdownResponse(response);
+            const response = await callStructuredLLM(prompt, TASK_SCHEMA, {
+                temperature: 0.2,
+                responseLength: 4096,
+                systemPrompt: breakdownSystemPrompt
+            });
+            let tasks;
+            try {
+                tasks = parseTaskBreakdownResponse(response);
+            } catch (parseError) {
+                console.warn('[PlotPlanner] 首次任务拆解 JSON 无效，尝试请求模型修复格式。', parseError);
+                const repairedResponse = await repairTaskJson(response);
+                tasks = parseTaskBreakdownResponse(repairedResponse);
+            }
             if (!Array.isArray(tasks) || tasks.length === 0) {
                 throw new Error('模型没有返回有效任务');
             }
@@ -1338,7 +1388,8 @@ ${messageText}
 返回 JSON。confidence 范围为 0 到 1。`;
             const result = parseJsonResponse(await callStructuredLLM(prompt, judgeSchema, {
                 temperature: 0.1,
-                responseLength: 256
+                responseLength: 256,
+                systemPrompt: '你是剧情任务完成判定器。只判断最新角色回复是否满足当前任务完成条件，并严格返回 JSON。不要续写剧情，不要解释格式外内容。'
             }));
             if (activeTaskIndex === taskIndexAtStart && result.complete === true && Number(result.confidence) >= 0.75) {
                 completeCurrentTask('completed');
