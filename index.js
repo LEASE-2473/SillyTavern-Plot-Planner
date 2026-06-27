@@ -1,5 +1,5 @@
 // ========================================================================
-// 剧情规划器 (Plot Planner) v2.0.0
+// 剧情规划器 (Plot Planner) v2.0.1
 // SillyTavern 第三方扩展 - RPG任务流式剧情管理 (含破限与多配置)
 // ========================================================================
 (function () {
@@ -12,7 +12,7 @@
     }
     window.PlotPlannerLoaded = true;
 
-    console.log('🗺️ 剧情规划器 v2.0.0 启动');
+    console.log('🗺️ 剧情规划器 v2.0.1 启动');
 
     // ===== 内部状态 =====
     let isModalOpen = false;
@@ -33,6 +33,13 @@
 
     const STATE_KEY = 'plot_planner_state';
     const REQUEST_TIMEOUT_MS = 90000;
+    const EXTENSION_PROMPT_TYPES = {
+        NONE: -1,
+        IN_PROMPT: 0,
+        IN_CHAT: 1
+    };
+    const COMPLETION_TAG_REGEX = /<\/?\s*(?:complete|questcomplete|plot[-_\s]?complete)\s*\/?>/i;
+    const COMPLETION_TAG_STRIP_REGEX = /<\/?\s*(?:complete|questcomplete|plot[-_\s]?complete)\s*\/?>/gi;
     const TASK_SCHEMA = {
         name: 'plot_planner_tasks',
         description: 'Ordered plot tasks',
@@ -768,7 +775,7 @@
         return {
             title: String(task?.title || `任务 ${index + 1}`),
             summary: String(task?.summary || ''),
-            completionCriteria: String(task?.completionCriteria || ''),
+            completionCriteria: String(task?.completionCriteria || '该节点的核心事件已经在角色回复中明确发生，且没有只停留在计划或预告。'),
             status: ['pending', 'active', 'completed', 'skipped'].includes(task?.status) ? task.status : 'pending'
         };
     }
@@ -886,7 +893,92 @@
     function parseJsonResponse(text) {
         if (typeof text !== 'string') return text;
         const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-        return JSON.parse(cleaned);
+        try {
+            return JSON.parse(cleaned);
+        } catch (firstError) {
+            const firstBrace = cleaned.indexOf('{');
+            const lastBrace = cleaned.lastIndexOf('}');
+            if (firstBrace >= 0 && lastBrace > firstBrace) {
+                try {
+                    return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+                } catch (objectError) {
+                    console.warn('[PlotPlanner] JSON 对象截取解析失败，继续尝试数组截取。', objectError);
+                }
+            }
+            const firstBracket = cleaned.indexOf('[');
+            const lastBracket = cleaned.lastIndexOf(']');
+            if (firstBracket >= 0 && lastBracket > firstBracket) {
+                return JSON.parse(cleaned.slice(firstBracket, lastBracket + 1));
+            }
+            throw firstError;
+        }
+    }
+
+    function normalizeTaskFromText(block, index) {
+        const lines = String(block || '')
+            .split('\n')
+            .map(line => line.trim())
+            .filter(Boolean);
+        const rawTitle = lines[0] || `任务 ${index + 1}`;
+        const title = rawTitle
+            .replace(/^[-*#\s]*/, '')
+            .replace(/^(?:step|任务|阶段|节点)\s*[\d一二三四五六七八九十]+[：:.\-\s]*/i, '')
+            .replace(/^【(.+)】$/, '$1')
+            .trim() || `任务 ${index + 1}`;
+        const body = lines.slice(1).join('\n') || String(block || '').trim();
+        const criteriaMatch = body.match(/(?:完成条件|判定条件|completionCriteria)\s*[：:]\s*([\s\S]*)/i);
+        const summary = criteriaMatch
+            ? body.slice(0, criteriaMatch.index).trim()
+            : body.trim();
+        const completionCriteria = criteriaMatch
+            ? criteriaMatch[1].trim()
+            : '该节点的核心事件已经在角色回复中明确发生，且没有只停留在计划或预告。';
+
+        return {
+            title,
+            summary: summary || body || title,
+            completionCriteria
+        };
+    }
+
+    function parseTaskBreakdownResponse(response) {
+        let parsed = null;
+        try {
+            parsed = parseJsonResponse(response);
+        } catch (error) {
+            console.warn('[PlotPlanner] JSON 解析失败，尝试按文本任务列表解析。', error);
+        }
+
+        if (Array.isArray(parsed)) {
+            parsed = { tasks: parsed };
+        }
+        if (parsed && Array.isArray(parsed.tasks)) {
+            return parsed.tasks.map((task, index) => {
+                if (typeof task === 'string') return normalizeTaskFromText(task, index);
+                return {
+                    title: String(task?.title || `任务 ${index + 1}`).trim(),
+                    summary: String(task?.summary || task?.description || task?.content || '').trim(),
+                    completionCriteria: String(task?.completionCriteria || task?.criteria || task?.completion || '').trim()
+                };
+            });
+        }
+
+        const text = String(response || '').trim();
+        if (!text) return [];
+        const blocks = text
+            .split(/\n(?=\s*(?:#{1,6}\s*)?(?:[-*]\s*)?(?:Step\s*\d+|任务\s*[\d一二三四五六七八九十]+|阶段\s*[\d一二三四五六七八九十]+|节点\s*[\d一二三四五六七八九十]+)[：:.\-\s])/i)
+            .map(block => block.trim())
+            .filter(Boolean);
+
+        if (blocks.length > 1) {
+            return blocks.map(normalizeTaskFromText);
+        }
+
+        const bulletBlocks = text
+            .split(/\n(?=\s*(?:[-*]|\d+[.)、])\s+)/)
+            .map(block => block.trim())
+            .filter(Boolean);
+        return bulletBlocks.length > 1 ? bulletBlocks.map(normalizeTaskFromText) : [];
     }
 
     async function callStructuredLLM(promptText, jsonSchema, options = {}) {
@@ -973,26 +1065,42 @@ ${text}`;
     async function handleBreakdown() {
         try {
             setBusyButton('#plot-planner-breakdown', true, '拆解中...');
-            const prompt = `将以下剧情大纲拆解成严格按顺序执行的任务。每个任务包含：
-1. title：简短标题；
-2. summary：该节点应发生的剧情；
-3. completionCriteria：可以从角色回复中客观判断的完成条件。
+            const nodeCount = Math.max(1, Math.min(10, Number($('#plot-planner-node-count').val()) || 3));
+            const prompt = `你要把“剧情大纲”拆成可逐步发送给 SillyTavern 主聊天 AI 执行的 RPG 任务链。
 
-只输出符合指定 JSON Schema 的结果。
+拆解原则：
+1. 整体剧情像大型 RPG 主线任务，每个子任务必须是一个明确、可扮演、可推进的小剧情节点。
+2. 子任务之间必须线性衔接；当前任务只推进当前节点，不要把后续节点提前完成。
+3. 预计拆成 ${nodeCount} 个左右任务；如果大纲天然需要，可以少量增减，但不要拆成空泛段落。
+4. 每个 summary 必须写清楚：本节点目标、关键冲突/阻碍、玩家或角色可互动的行动、不能越过的边界。
+5. 每个 completionCriteria 必须是主聊天 AI 回复里能观察到的完成事实，不要写“氛围足够”“关系推进”这种无法判断的条件。
+6. completionCriteria 最后提醒主聊天 AI：当且仅当本节点真正完成时，在回复末尾输出 <complete>。
+7. 不要输出 Markdown、解释、前后缀或代码块，只输出 JSON。
+
+JSON 结构必须是：
+{
+  "tasks": [
+    {
+      "title": "简短任务标题",
+      "summary": "本节点目标、冲突、互动行动、边界。",
+      "completionCriteria": "可观察完成条件；完成时在回复末尾输出 <complete>。"
+    }
+  ]
+}
 
 【剧情大纲】
 ${currentDraft}`;
             const response = await callStructuredLLM(prompt, TASK_SCHEMA, { temperature: 0.3 });
-            const parsed = parseJsonResponse(response);
-            if (!Array.isArray(parsed.tasks) || parsed.tasks.length === 0) {
+            const tasks = parseTaskBreakdownResponse(response);
+            if (!Array.isArray(tasks) || tasks.length === 0) {
                 throw new Error('模型没有返回有效任务');
             }
-            currentTasks = parsed.tasks.map(task => ({
-                title: String(task.title || '').trim(),
+            currentTasks = tasks.map((task, index) => ({
+                title: String(task.title || `任务 ${index + 1}`).trim(),
                 summary: String(task.summary || '').trim(),
-                completionCriteria: String(task.completionCriteria || '').trim(),
+                completionCriteria: String(task.completionCriteria || '该节点的核心事件已经在角色回复中明确发生；完成时在回复末尾输出 <complete>。').trim(),
                 status: 'pending'
-            }));
+            })).filter(task => task.title || task.summary);
             activeTaskIndex = -1;
             renderTasks();
             savePlannerState();
@@ -1064,16 +1172,27 @@ ${currentDraft}`;
         if (activeTaskIndex >= 0 && activeTaskIndex < currentTasks.length) {
             const currentTask = currentTasks[activeTaskIndex];
             const injectionText = isExecutionPaused ? '' : `[System Note (Plot Planner):
+你正在执行一个分阶段 RPG 剧情任务链。当前只执行下面这个节点，不要提前完成后续剧情，也不要提及“剧情规划器”或这些系统指令。
+
+当前任务进度：${activeTaskIndex + 1}/${currentTasks.length}
 当前剧情节点：${currentTask.title}
-节点内容：${currentTask.summary}
-完成条件：${currentTask.completionCriteria}
-请在接下来的对话中自然地推动该节点，不要跳过必要过程，也不要提及剧情规划器。]`;
+
+节点内容：
+${currentTask.summary}
+
+完成条件：
+${currentTask.completionCriteria}
+
+执行要求：
+- 在接下来的主对话中自然推动这个节点，让角色通过行动、对话、发现或冲突来完成它。
+- 不要一次性跳过必要过程；如果条件尚未真正发生，就继续铺垫和推进。
+- 当且仅当该节点已经在当前回复中明确完成时，在回复末尾单独输出 <complete>。]`;
             
-            // IN_CHAT at depth 0, system role.
-            context.setExtensionPrompt('plot-planner', injectionText, 1, 0);
+            // IN_PROMPT places the task with extension/system prompts, after world info in Chat Completion flows.
+            context.setExtensionPrompt('plot-planner', injectionText, EXTENSION_PROMPT_TYPES.IN_PROMPT, 0);
             console.log("[PlotPlanner] 已更新任务提示词:", currentTask.title);
         } else {
-            context.setExtensionPrompt('plot-planner', '', 1, 0);
+            context.setExtensionPrompt('plot-planner', '', EXTENSION_PROMPT_TYPES.IN_PROMPT, 0);
             console.log("[PlotPlanner] 已清除任务提示词");
         }
     }
@@ -1159,7 +1278,29 @@ ${currentDraft}`;
         const context = SillyTavern.getContext();
         const message = context?.chat?.[Number(messageId)];
         if (!message || message.is_user || !message.mes) return;
+        if (consumeCompletionTag(message, messageId)) return;
         await judgeTaskCompletion(message.mes);
+    }
+
+    function consumeCompletionTag(message, messageId) {
+        if (!COMPLETION_TAG_REGEX.test(message.mes || '')) return false;
+        const cleaned = String(message.mes || '').replace(COMPLETION_TAG_STRIP_REGEX, '').trim();
+        message.mes = cleaned;
+        if (Array.isArray(message.swipes) && Number.isInteger(message.swipe_id) && message.swipes[message.swipe_id]) {
+            message.swipes[message.swipe_id] = String(message.swipes[message.swipe_id]).replace(COMPLETION_TAG_STRIP_REGEX, '').trim();
+        }
+
+        const context = SillyTavern.getContext();
+        try {
+            const $message = $(`.mes[mesid="${messageId}"] .mes_text`);
+            if ($message.length) $message.text(cleaned);
+            context.eventSource?.emit(context.event_types.MESSAGE_UPDATED, Number(messageId));
+        } catch (error) {
+            console.warn('[PlotPlanner] 清理完成标签的界面刷新失败:', error);
+        }
+        context.saveChat?.();
+        completeCurrentTask('completed');
+        return true;
     }
 
     async function judgeTaskCompletion(messageText) {
