@@ -277,7 +277,8 @@
     // ===== 提示词系统 =====
     async function loadBuiltInPrompts() {
         try {
-            const res = await fetch('/scripts/extensions/third-party/plot-planner/prompts.json');
+            const promptsUrl = new URL('./prompts.json', import.meta.url);
+            const res = await fetch(promptsUrl);
             if (res.ok) {
                 builtInPrompts = await res.json();
             } else {
