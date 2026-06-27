@@ -1,5 +1,5 @@
 // ========================================================================
-// 剧情规划器 (Plot Planner) v2.0.2
+// 剧情规划器 (Plot Planner) v2.0.3
 // SillyTavern 第三方扩展 - RPG任务流式剧情管理 (含破限与多配置)
 // ========================================================================
 (function () {
@@ -12,7 +12,7 @@
     }
     window.PlotPlannerLoaded = true;
 
-    console.log('🗺️ 剧情规划器 v2.0.2 启动');
+    console.log('🗺️ 剧情规划器 v2.0.3 启动');
 
     // ===== 内部状态 =====
     let isModalOpen = false;
@@ -136,8 +136,35 @@
             <div id="plot-planner-close" class="plot-planner-close-btn">&times;</div>
         </div>
         <div class="plot-planner-body">
+            <div class="plot-planner-config plot-generation-panel" id="plot-planner-config-section">
+                <div class="plot-generation-title">剧情生成</div>
+                <div class="context-builder">
+                    <div class="context-builder-title">剧情上下文</div>
+                    <div class="context-options">
+                        <label><input type="checkbox" id="plot-context-chat" checked> 最近聊天</label>
+                        <label><input type="checkbox" id="plot-context-character" checked> 角色信息</label>
+                        <label><input type="checkbox" id="plot-context-note" checked> 作者注释</label>
+                        <label><input type="checkbox" id="plot-context-world" checked> 激活世界书</label>
+                        <label>消息数 <input type="number" id="plot-context-count" value="20" min="1" max="200"></label>
+                    </div>
+                    <button id="plot-context-preview" class="plot-btn" type="button">预览本次上下文</button>
+                    <details id="plot-context-preview-panel" class="context-preview-panel">
+                        <summary id="plot-context-summary">尚未收集上下文</summary>
+                        <pre id="plot-context-preview-text"></pre>
+                    </details>
+                </div>
+                <div class="config-row">
+                    <label>剧情方向/结局 (选填):</label>
+                    <input type="text" id="plot-planner-direction" placeholder="例如：加入一点悬疑元素，结局是两人和好...">
+                </div>
+                <div class="config-row">
+                    <label>期待任务节点数量:</label>
+                    <input type="number" id="plot-planner-node-count" value="3" min="1" max="10">
+                </div>
+                <button id="plot-planner-generate-draft" class="plot-btn primary-btn" style="margin-top: 10px; width: 100%;">生成草案</button>
+            </div>
             <details class="plot-planner-details" id="plot-planner-settings-details">
-                <summary>⚙️ 剧情与 API 高级设置 (点击展开/折叠)</summary>
+                <summary>⚙️ API / 提示词高级设置 (点击展开/折叠)</summary>
                 <div class="plot-planner-details-content">
                     
                     <!-- 多配置管理 -->
@@ -202,33 +229,6 @@
                         <div style="font-size: 0.8rem; color: #888; margin-top: 5px;">说明：剧情规划提示词会结合上下文生成固定格式大纲；子任务拆解提示词只处理最终大纲，不会再次发送世界书/聊天等长上下文。</div>
                     </div>
 
-                    <!-- 剧情参数 -->
-                    <div class="plot-planner-config" id="plot-planner-config-section">
-                        <div class="context-builder">
-                            <div class="context-builder-title">剧情上下文</div>
-                            <div class="context-options">
-                                <label><input type="checkbox" id="plot-context-chat" checked> 最近聊天</label>
-                                <label><input type="checkbox" id="plot-context-character" checked> 角色信息</label>
-                                <label><input type="checkbox" id="plot-context-note" checked> 作者注释</label>
-                                <label><input type="checkbox" id="plot-context-world" checked> 激活世界书</label>
-                                <label>消息数 <input type="number" id="plot-context-count" value="20" min="1" max="200"></label>
-                            </div>
-                            <button id="plot-context-preview" class="plot-btn" type="button">预览本次上下文</button>
-                            <details id="plot-context-preview-panel" class="context-preview-panel">
-                                <summary id="plot-context-summary">尚未收集上下文</summary>
-                                <pre id="plot-context-preview-text"></pre>
-                            </details>
-                        </div>
-                        <div class="config-row">
-                            <label>剧情方向/结局 (选填):</label>
-                            <input type="text" id="plot-planner-direction" placeholder="例如：加入一点悬疑元素，结局是两人和好...">
-                        </div>
-                        <div class="config-row">
-                            <label>期待任务节点数量:</label>
-                            <input type="number" id="plot-planner-node-count" value="3" min="1" max="10">
-                        </div>
-                        <button id="plot-planner-generate-draft" class="plot-btn primary-btn" style="margin-top: 10px; width: 100%;">生成草案</button>
-                    </div>
                 </div>
             </details>
             <div class="plot-planner-chat-area" id="plot-planner-chat-section">

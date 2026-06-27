@@ -1,5 +1,40 @@
 # CODEX_CHANGELOG
 
+## 2026-06-28 - 优化剧情生成入口与主题输入框颜色
+
+### 用户目标
+
+根据 `PROJECT_CONTEXT.md` 与 `CODEX_CHANGELOG.md` 理解项目后，调整 Plot Planner 的界面：不要把“剧情方向/结局”等剧情生成参数折叠在 API 配置里；同时检查 UI 与字体颜色，修复在部分 SillyTavern 主题下浅色/白色输入框中文字不可见的问题。
+
+### 主要修改内容
+
+- 将剧情生成参数区移出高级设置折叠面板，作为默认可见的“剧情生成”卡片展示。
+- 高级设置折叠面板改为只承载 Profile、API 与提示词配置，并调整标题为“API / 提示词高级设置”。
+- 为插件作用域内的 `input`、`textarea`、`select`、聊天输入框和上下文消息数输入框统一设置深色背景、浅色文字、灰色占位符与聚焦边框，降低被酒馆主题样式污染导致文字不可见的风险。
+- 更新扩展版本到 `2.0.3`。
+
+### 修改的文件
+
+- `PROJECT_CONTEXT.md`
+- `CODEX_CHANGELOG.md`
+- `index.js`
+- `manifest.json`
+- `style.css`
+
+### 执行的验证命令及结果
+
+- `node --check index.js`：通过。
+- `node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8')); console.log('manifest ok')"`：通过。
+
+### 未完成事项
+
+- 尚未在真实 SillyTavern UI 与用户当前主题下进行视觉端到端复测。
+
+### 已知风险与后续建议
+
+- 如果某些 SillyTavern 主题使用更高优先级的 `!important` 样式覆盖插件输入框，仍可能需要追加更强的插件作用域选择器。
+- 建议在当前主题下重载扩展后重点检查：剧情方向输入框、聊天修改输入框、API/Profile 选择框和任务编辑文本区域的可读性。
+
 ## 2026-06-28 - 重构剧情规划与子任务拆解提示词
 
 ### 用户目标
