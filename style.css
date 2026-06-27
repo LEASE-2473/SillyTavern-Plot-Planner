@@ -1,0 +1,300 @@
+/* 剧情规划器 模态框样式 */
+.plot-planner-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Inter', sans-serif, 'Microsoft YaHei';
+}
+
+.plot-planner-container {
+    width: 800px;
+    max-width: 90%;
+    height: 85vh;
+    background: #1e1e24;
+    border: 1px solid #333;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+    overflow: hidden;
+}
+
+.plot-planner-header {
+    padding: 15px 20px;
+    background: #25252b;
+    border-bottom: 1px solid #333;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.plot-planner-header h2 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: #e0e0e0;
+}
+
+.plot-planner-close-btn {
+    font-size: 1.5rem;
+    color: #888;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.plot-planner-close-btn:hover {
+    color: #fff;
+}
+
+.plot-planner-body {
+    flex: 1;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    overflow-y: auto;
+}
+
+/* 高级设置折叠区域 */
+.plot-planner-details {
+    background: #25252b;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 10px 15px;
+}
+
+.plot-planner-details summary {
+    cursor: pointer;
+    font-weight: bold;
+    color: #e0e0e0;
+    outline: none;
+    user-select: none;
+}
+
+.plot-planner-details-content {
+    margin-top: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+/* 滚动条美化 */
+.plot-planner-body::-webkit-scrollbar {
+    width: 8px;
+}
+.plot-planner-body::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 4px;
+}
+
+/* 配置区 */
+.plot-planner-config {
+    background: #25252b;
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid #333;
+}
+
+.config-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.config-row label {
+    flex: 0 0 160px;
+    color: #bbb;
+    font-size: 0.9rem;
+}
+
+.config-row input {
+    flex: 1;
+    background: #121215;
+    border: 1px solid #333;
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 4px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.config-row input:focus {
+    border-color: #66b2ff;
+}
+
+/* 按钮通用样式 */
+.plot-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.2s;
+    background: #444;
+    color: #fff;
+}
+.plot-btn:hover:not(:disabled) { background: #555; }
+.plot-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.primary-btn { background: #0066cc; }
+.primary-btn:hover:not(:disabled) { background: #0077ee; }
+.warning-btn { background: #cc6600; }
+.warning-btn:hover:not(:disabled) { background: #ee7700; }
+.success-btn { background: #008844; }
+.success-btn:hover:not(:disabled) { background: #00aa55; }
+
+/* 聊天区 */
+.plot-planner-chat-area {
+    flex: 1;
+    min-height: 250px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #333;
+    border-radius: 8px;
+    background: #121215;
+    overflow: hidden;
+}
+
+.chat-history {
+    flex: 1;
+    padding: 15px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.chat-message {
+    padding: 10px 14px;
+    border-radius: 8px;
+    max-width: 85%;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.system-msg {
+    align-self: center;
+    background: #222;
+    color: #888;
+    font-size: 0.85rem;
+}
+
+.user-msg {
+    align-self: flex-end;
+    background: #0055aa;
+    color: #fff;
+    border-bottom-right-radius: 2px;
+}
+
+.ai-msg {
+    align-self: flex-start;
+    background: #2a2a32;
+    color: #e0e0e0;
+    border: 1px solid #333;
+    border-bottom-left-radius: 2px;
+}
+
+.chat-input-row {
+    display: flex;
+    padding: 10px;
+    background: #25252b;
+    border-top: 1px solid #333;
+    gap: 10px;
+}
+
+.chat-input-row input {
+    flex: 1;
+    background: #121215;
+    border: 1px solid #333;
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 4px;
+    outline: none;
+}
+.chat-input-row input:focus { border-color: #66b2ff; }
+
+/* 任务执行区 */
+.execution-area {
+    flex: 1;
+    min-height: 250px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: #25252b;
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid #333;
+}
+
+.execution-area h3 {
+    margin-top: 0;
+    color: #e0e0e0;
+    font-size: 1rem;
+}
+
+.tasks-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.task-item {
+    background: #1a1a1f;
+    border: 1px solid #444;
+    padding: 12px;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.task-item.active {
+    border-color: #00aa55;
+    background: rgba(0, 170, 85, 0.1);
+}
+
+.task-item.completed {
+    border-color: #333;
+    opacity: 0.6;
+}
+
+.task-header {
+    font-weight: bold;
+    color: #88b2ff;
+    font-size: 0.9rem;
+    display: flex;
+    justify-content: space-between;
+}
+
+.task-content {
+    color: #ddd;
+    font-size: 0.9rem;
+    width: 100%;
+    background: transparent;
+    border: none;
+    resize: vertical;
+    outline: none;
+}
+.task-content:focus {
+    border-bottom: 1px solid #66b2ff;
+}
+
+.plot-planner-footer {
+    padding: 15px 20px;
+    background: #25252b;
+    border-top: 1px solid #333;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
