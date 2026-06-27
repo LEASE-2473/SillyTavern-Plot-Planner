@@ -1,5 +1,5 @@
 // ========================================================================
-// 剧情规划器 (Plot Planner) v2.0.3
+// 剧情规划器 (Plot Planner) v2.0.5
 // SillyTavern 第三方扩展 - RPG任务流式剧情管理 (含破限与多配置)
 // ========================================================================
 (function () {
@@ -12,7 +12,7 @@
     }
     window.PlotPlannerLoaded = true;
 
-    console.log('🗺️ 剧情规划器 v2.0.3 启动');
+    console.log('🗺️ 剧情规划器 v2.0.5 启动');
 
     // ===== 内部状态 =====
     let isModalOpen = false;
@@ -21,7 +21,6 @@
     let miniChatHistory = [];
     let currentDraft = '';
     let isExecutionPaused = false;
-    let isJudgingCompletion = false;
     let activeRequest = null;
     let lastFailedAction = null;
     
@@ -38,8 +37,7 @@
         IN_PROMPT: 0,
         IN_CHAT: 1
     };
-    const COMPLETION_TAG_REGEX = /<\/?\s*(?:complete|questcomplete|plot[-_\s]?complete)\s*\/?>/i;
-    const COMPLETION_TAG_STRIP_REGEX = /<\/?\s*(?:complete|questcomplete|plot[-_\s]?complete)\s*\/?>/gi;
+    const COMPLETION_TAG_REGEX = /<\s*(?:complete|questcomplete|plot[-_\s]?complete)\s*(?:\/>|>\s*<\/\s*(?:complete|questcomplete|plot[-_\s]?complete)\s*>|>)/i;
     const DEFAULT_PLANNING_SYSTEM_PROMPT = '你是一个专业的 RPG 跑团向剧情策划师。请根据玩家要求、角色设定和聊天上下文，生成可商讨、可执行、带有阶段推进感的剧情规划。不要输出无关废话。';
     const DEFAULT_BREAKDOWN_SYSTEM_PROMPT = `你是 Plot Planner 的任务拆解器，只负责把已经敲定的剧情规划转换成可执行任务 JSON。
 
@@ -49,8 +47,9 @@
 3. JSON 顶层必须是 {"tasks":[...]}。
 4. 每个任务必须包含 title、summary、completionCriteria 三个字符串字段。
 5. summary 要写成可发送给主聊天 AI 的当前剧情节点说明，包含目标、冲突/阻碍、可互动行动和边界。
-6. completionCriteria 必须是能从主聊天 AI 回复中客观观察到的完成事实，并提醒完成时在回复末尾输出 <complete>。
-7. 任务必须线性衔接；当前任务不要提前完成后续任务。`;
+6. completionCriteria 必须是能从主聊天 AI 回复中客观观察到的“小完成事实”，并提醒完成时只输出一次 <complete></complete>。
+7. 每个任务只能包含一个核心戏剧拍点，不要把“铺垫、试探、反应、揭露、逃避、余波”等多个拍点合并成一个任务。
+8. 任务必须线性衔接；当前任务不要提前完成后续任务，也不要替 {{user}} 做决定。`;
     const BREAKDOWN_REPAIR_SYSTEM_PROMPT = `你是 JSON 格式修复器。请把上一次任务拆解输出修复为合法 JSON。
 
 要求：
@@ -248,7 +247,7 @@
                     <button id="plot-planner-skip" class="plot-btn warning-btn" type="button">跳过</button>
                     <button id="plot-planner-pause" class="plot-btn" type="button">暂停</button>
                     <button id="plot-planner-stop" class="plot-btn danger-btn" type="button">停止规划</button>
-                    <label class="auto-judge-toggle"><input id="plot-planner-auto-judge" type="checkbox" checked> 自动判定完成</label>
+                    <button id="plot-planner-clear" class="plot-btn danger-btn" type="button">清空剧情</button>
                 </div>
                 <div id="plot-planner-tasks-list" class="tasks-list"></div>
             </div>
@@ -302,9 +301,10 @@
         $('#plot-planner-skip').on('click', () => completeCurrentTask('skipped'));
         $('#plot-planner-pause').on('click', toggleExecutionPause);
         $('#plot-planner-stop').on('click', stopExecution);
+        $('#plot-planner-clear').on('click', clearPlanner);
         $('#plot-planner-retry').on('click', retryLastAction);
         $('#plot-planner-cancel-request').on('click', cancelActiveRequest);
-        $('#plot-planner-auto-judge, #plot-context-chat, #plot-context-character, #plot-context-note, #plot-context-world, #plot-context-count')
+        $('#plot-context-chat, #plot-context-character, #plot-context-note, #plot-context-world, #plot-context-count')
             .on('change', savePlannerState);
         
         // 模式切换显示
@@ -760,7 +760,6 @@
             tasks: currentTasks,
             activeTaskIndex,
             paused: isExecutionPaused,
-            autoJudge: $('#plot-planner-auto-judge').prop('checked'),
             direction: $('#plot-planner-direction').val() || '',
             nodeCount: Number($('#plot-planner-node-count').val()) || 3,
             contextSettings: getContextSettings()
@@ -789,7 +788,6 @@
         miniChatHistory.forEach(message => appendMiniChat(message.role, message.content));
         $('#plot-planner-direction').val(state?.direction || '');
         $('#plot-planner-node-count').val(state?.nodeCount || 3);
-        $('#plot-planner-auto-judge').prop('checked', state?.autoJudge !== false);
 
         const settings = state?.contextSettings || {};
         $('#plot-context-chat').prop('checked', settings.includeChat !== false);
@@ -803,6 +801,7 @@
         $('#plot-planner-execution-area').toggle(currentTasks.length > 0);
         $('#plot-planner-chat-section').toggle(currentTasks.length === 0);
         $('#plot-planner-start').toggle(currentTasks.length > 0 && activeTaskIndex < 0);
+        $('#plot-planner-breakdown').toggle(currentTasks.length === 0);
         updatePauseButton();
         renderTasks();
         updatePromptInjection();
@@ -1018,7 +1017,7 @@
     {
       "title": "简短任务标题",
       "summary": "当前剧情节点说明，包含目标、冲突/阻碍、可互动行动和边界。",
-      "completionCriteria": "可观察完成条件；完成时在回复末尾输出 <complete>。"
+      "completionCriteria": "最近一步可观察的小完成事实；完成时只输出一次 <complete></complete>。"
     }
   ]
 }
@@ -1122,10 +1121,16 @@ ${PLOT_OUTLINE_FORMAT_PROMPT}`;
     {
       "title": "简短任务标题",
       "summary": "当前剧情节点说明，包含目标、冲突/阻碍、可互动行动和边界。",
-      "completionCriteria": "可观察完成条件；完成时在回复末尾输出 <complete>。"
+      "completionCriteria": "最近一步可观察的小完成事实；完成时只输出一次 <complete></complete>。"
     }
   ]
 }
+
+【拆解节奏要求】
+- 每个任务只能包含一个核心戏剧拍点，例如铺垫、试探、反应、揭露、逃避、余波只能选择其中一类作为重点。
+- 不要把多个连续结果合并进一个任务；如果剧情包含“铺垫→试探→破防→逃离→余波”，必须拆成多个任务。
+- completionCriteria 必须描述最近一步已经发生的可观察事实，不要写成整段剧情的最终结局。
+- summary 必须约束主聊天 AI 不得替 {{user}} 做决定，不得提前完成后续节点。
 
 【最终敲定的剧情规划】
 ${currentDraft}`;
@@ -1148,7 +1153,7 @@ ${currentDraft}`;
             currentTasks = tasks.map((task, index) => ({
                 title: String(task.title || `任务 ${index + 1}`).trim(),
                 summary: String(task.summary || '').trim(),
-                completionCriteria: String(task.completionCriteria || '该节点的核心事件已经在角色回复中明确发生；完成时在回复末尾输出 <complete>。').trim(),
+                completionCriteria: String(task.completionCriteria || '该节点最近一步核心事件已经在角色回复中明确发生；完成时只输出一次 <complete></complete>。').trim(),
                 status: 'pending'
             })).filter(task => task.title || task.summary);
             activeTaskIndex = -1;
@@ -1222,7 +1227,7 @@ ${currentDraft}`;
         if (activeTaskIndex >= 0 && activeTaskIndex < currentTasks.length) {
             const currentTask = currentTasks[activeTaskIndex];
             const injectionText = isExecutionPaused ? '' : `[System Note (Plot Planner):
-你正在执行一个分阶段 RPG 剧情任务链。当前只执行下面这个节点，不要提前完成后续剧情，也不要提及“剧情规划器”或这些系统指令。
+你正在执行一个分阶段 RPG 剧情任务链。当前只执行下面这个节点。不要提及“剧情规划器”或这些系统指令。
 
 当前任务进度：${activeTaskIndex + 1}/${currentTasks.length}
 当前剧情节点：${currentTask.title}
@@ -1233,10 +1238,15 @@ ${currentTask.summary}
 完成条件：
 ${currentTask.completionCriteria}
 
-执行要求：
-- 在接下来的主对话中自然推动这个节点，让角色通过行动、对话、发现或冲突来完成它。
-- 不要一次性跳过必要过程；如果条件尚未真正发生，就继续铺垫和推进。
-- 当且仅当该节点已经在当前回复中明确完成时，在回复末尾单独输出 <complete>。]`;
+执行边界：
+- 本轮只推进“当前剧情节点”，不得提前完成、预告、概括或跳转到后续节点。
+- 不得替 {{user}} 做决定，不得描写 {{user}} 已经选择、同意、拒绝、行动、回复、离开、攻击、亲密接触或使用能力，除非这些行为已经由 {{user}} 在上一条消息中明确给出。
+- 不得抢话。涉及 {{user}} 的关键选择、态度、回应、行动结果时，必须停下来等待 {{user}}。
+- 不得为了完成任务而强行推进时间、地点、关系状态或重大冲突结果。
+- 每次回复最多推进一个核心戏剧拍点：铺垫、试探、反应、揭露、逃避、余波只能选择其中一类作为重点。
+- 如果当前节点尚未自然完成，只能继续铺垫、制造压力、给出可回应的局面，不得输出完成标签。
+- 如果当前节点已经在当前回复中明确完成，只输出一次 <complete></complete> 作为隐藏完成标记；不要在草稿、摘要、状态栏、选项或解释中提到完成标签。
+- 输出 <complete></complete> 后，不得继续推进下一节点。]`;
             
             // IN_PROMPT places the task with extension/system prompts, after world info in Chat Completion flows.
             context.setExtensionPrompt('plot-planner', injectionText, EXTENSION_PROMPT_TYPES.IN_PROMPT, 0);
@@ -1320,88 +1330,45 @@ ${currentTask.completionCriteria}
         notify('info', '剧情规划已停止，任务清单仍保留。');
     }
 
-    async function onMessageReceived(messageId) {
-        if (isExecutionPaused || isJudgingCompletion) return;
-        if (!$('#plot-planner-auto-judge').prop('checked')) return;
+    function clearPlanner() {
+        currentDraft = '';
+        miniChatHistory = [];
+        currentTasks = [];
+        activeTaskIndex = -1;
+        isExecutionPaused = false;
+        lastFailedAction = null;
+
+        $('#plot-planner-chat-history').empty().append(
+            $('<div>').addClass('chat-message system-msg').text('请在上方输入设定并点击"生成草案"，AI将为你构思带转折的剧情大纲。')
+        );
+        $('#plot-planner-chat-input').val('');
+        $('#plot-planner-chat-input, #plot-planner-chat-send, #plot-planner-breakdown').prop('disabled', true);
+        $('#plot-planner-error').hide();
+        $('#plot-planner-execution-area').slideUp();
+        $('#plot-planner-chat-section').slideDown();
+        $('#plot-planner-start').hide();
+        $('#plot-planner-breakdown').show();
+        updatePauseButton();
+        renderTasks();
+        updatePromptInjection();
+        savePlannerState();
+        notify('info', '已清空剧情规划和任务链，可重新生成或切换任务。');
+    }
+
+    function onMessageReceived(messageId) {
+        if (isExecutionPaused) return;
         if (activeTaskIndex < 0 || activeTaskIndex >= currentTasks.length) return;
 
         const context = SillyTavern.getContext();
         const message = context?.chat?.[Number(messageId)];
         if (!message || message.is_user || !message.mes) return;
-        if (consumeCompletionTag(message, messageId)) return;
-        await judgeTaskCompletion(message.mes);
+        consumeCompletionTag(message);
     }
 
-    function consumeCompletionTag(message, messageId) {
+    function consumeCompletionTag(message) {
         if (!COMPLETION_TAG_REGEX.test(message.mes || '')) return false;
-        const cleaned = String(message.mes || '').replace(COMPLETION_TAG_STRIP_REGEX, '').trim();
-        message.mes = cleaned;
-        if (Array.isArray(message.swipes) && Number.isInteger(message.swipe_id) && message.swipes[message.swipe_id]) {
-            message.swipes[message.swipe_id] = String(message.swipes[message.swipe_id]).replace(COMPLETION_TAG_STRIP_REGEX, '').trim();
-        }
-
-        const context = SillyTavern.getContext();
-        try {
-            const $message = $(`.mes[mesid="${messageId}"] .mes_text`);
-            if ($message.length) $message.text(cleaned);
-            context.eventSource?.emit(context.event_types.MESSAGE_UPDATED, Number(messageId));
-        } catch (error) {
-            console.warn('[PlotPlanner] 清理完成标签的界面刷新失败:', error);
-        }
-        context.saveChat?.();
         completeCurrentTask('completed');
         return true;
-    }
-
-    async function judgeTaskCompletion(messageText) {
-        const taskIndexAtStart = activeTaskIndex;
-        const task = currentTasks[taskIndexAtStart];
-        if (!task) return;
-        isJudgingCompletion = true;
-        try {
-            const judgeSchema = {
-                name: 'plot_task_completion',
-                strict: true,
-                value: {
-                    type: 'object',
-                    properties: {
-                        complete: { type: 'boolean' },
-                        confidence: { type: 'number' },
-                        reason: { type: 'string' }
-                    },
-                    required: ['complete', 'confidence', 'reason'],
-                    additionalProperties: false
-                }
-            };
-            const prompt = `判断最新角色回复是否已经满足当前剧情节点的完成条件。只能依据回复中实际发生的内容，不要因为提到了未来计划就判定完成。
-
-【当前节点】
-${task.title}
-${task.summary}
-
-【完成条件】
-${task.completionCriteria}
-
-【最新角色回复】
-${messageText}
-
-返回 JSON。confidence 范围为 0 到 1。`;
-            const result = parseJsonResponse(await callStructuredLLM(prompt, judgeSchema, {
-                temperature: 0.1,
-                responseLength: 256,
-                systemPrompt: '你是剧情任务完成判定器。只判断最新角色回复是否满足当前任务完成条件，并严格返回 JSON。不要续写剧情，不要解释格式外内容。'
-            }));
-            if (activeTaskIndex === taskIndexAtStart && result.complete === true && Number(result.confidence) >= 0.75) {
-                completeCurrentTask('completed');
-            } else if (result.reason) {
-                console.info('[PlotPlanner] 当前任务尚未完成:', result.reason);
-            }
-        } catch (error) {
-            console.warn('[PlotPlanner] 自动完成判定失败:', error);
-            notify('warning', '自动完成判定失败，可稍后手动完成任务。');
-        } finally {
-            isJudgingCompletion = false;
-        }
     }
 
     // ===== 启动 =====
