@@ -1,5 +1,39 @@
 # CODEX_CHANGELOG
 
+## 2026-06-28 - 强化插件内表单颜色隔离
+
+### 用户目标
+
+修复 Plot Planner 在当前 SillyTavern 主题下任务链文本框不选中文本时几乎不可见的问题；不要继续依赖酒馆主题颜色，插件内字体颜色和文本框背景应统一使用插件自己的样式。
+
+### 主要修改内容
+
+- 在 `.plot-planner-overlay` 内定义插件专用色板变量，减少对 SillyTavern 主题变量的依赖。
+- 对插件内 `input`、`textarea`、`select` 强制使用插件深色背景、浅色文字、固定边框、插入光标颜色和选区颜色。
+- 为任务链 `.task-content` 文本框移除透明底假设，改为固定深色背景、边框、内边距和聚焦高亮。
+- 为任务完成条件 `.task-criteria` 单独固定浅绿色文字，避免被主题覆盖。
+- 更新扩展版本到 `2.0.6`。
+
+### 修改的文件
+
+- `PROJECT_CONTEXT.md`
+- `CODEX_CHANGELOG.md`
+- `manifest.json`
+- `style.css`
+
+### 执行的验证命令及结果
+
+- `node --check index.js`：通过。
+- `node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8')); console.log('manifest ok')"`：通过，输出 `manifest ok`。
+
+### 未完成事项
+
+- 尚未在真实 SillyTavern UI 与用户当前主题下进行视觉端到端复测。
+
+### 已知风险与后续建议
+
+- 本次使用插件作用域内的 `!important` 来压过外部主题样式；如果后续需要支持浅色插件主题，可再抽出可配置色板。
+
 ## 2026-06-28 - 移除 LLM 自动完成判定
 
 ### 用户目标
