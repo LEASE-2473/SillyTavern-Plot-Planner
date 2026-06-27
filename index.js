@@ -1,5 +1,5 @@
 // ========================================================================
-// 剧情规划器 (Plot Planner) v1.1.0
+// 剧情规划器 (Plot Planner) v2.0.0
 // SillyTavern 第三方扩展 - RPG任务流式剧情管理 (含破限与多配置)
 // ========================================================================
 (function () {
@@ -12,19 +12,52 @@
     }
     window.PlotPlannerLoaded = true;
 
-    console.log('🗺️ 剧情规划器 v1.1.0 启动');
+    console.log('🗺️ 剧情规划器 v2.0.0 启动');
 
     // ===== 内部状态 =====
     let isModalOpen = false;
     let currentTasks = [];
     let activeTaskIndex = -1;
     let miniChatHistory = [];
+    let currentDraft = '';
+    let isExecutionPaused = false;
+    let isJudgingCompletion = false;
+    let activeRequest = null;
+    let lastFailedAction = null;
     
     // 多配置与预设
     let apiProfiles = [];
     let currentProfileId = 'default';
     let builtInPrompts = [];
     let customPrompts = [];
+
+    const STATE_KEY = 'plot_planner_state';
+    const REQUEST_TIMEOUT_MS = 90000;
+    const TASK_SCHEMA = {
+        name: 'plot_planner_tasks',
+        description: 'Ordered plot tasks',
+        strict: true,
+        value: {
+            type: 'object',
+            properties: {
+                tasks: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            title: { type: 'string' },
+                            summary: { type: 'string' },
+                            completionCriteria: { type: 'string' }
+                        },
+                        required: ['title', 'summary', 'completionCriteria'],
+                        additionalProperties: false
+                    }
+                }
+            },
+            required: ['tasks'],
+            additionalProperties: false
+        }
+    };
 
     // ===== 等待依赖加载 =====
     async function init() {
@@ -108,6 +141,21 @@
 
                     <!-- 剧情参数 -->
                     <div class="plot-planner-config" id="plot-planner-config-section">
+                        <div class="context-builder">
+                            <div class="context-builder-title">剧情上下文</div>
+                            <div class="context-options">
+                                <label><input type="checkbox" id="plot-context-chat" checked> 最近聊天</label>
+                                <label><input type="checkbox" id="plot-context-character" checked> 角色信息</label>
+                                <label><input type="checkbox" id="plot-context-note" checked> 作者注释</label>
+                                <label><input type="checkbox" id="plot-context-world" checked> 激活世界书</label>
+                                <label>消息数 <input type="number" id="plot-context-count" value="20" min="1" max="200"></label>
+                            </div>
+                            <button id="plot-context-preview" class="plot-btn" type="button">预览本次上下文</button>
+                            <details id="plot-context-preview-panel" class="context-preview-panel">
+                                <summary id="plot-context-summary">尚未收集上下文</summary>
+                                <pre id="plot-context-preview-text"></pre>
+                            </details>
+                        </div>
                         <div class="config-row">
                             <label>剧情方向/结局 (选填):</label>
                             <input type="text" id="plot-planner-direction" placeholder="例如：加入一点悬疑元素，结局是两人和好...">
@@ -131,7 +179,20 @@
             </div>
             <div id="plot-planner-execution-area" class="execution-area" style="display: none;">
                 <h3>当前剧情任务链</h3>
+                <div class="execution-toolbar">
+                    <button id="plot-planner-prev" class="plot-btn" type="button">上一步</button>
+                    <button id="plot-planner-complete" class="plot-btn success-btn" type="button">手动完成</button>
+                    <button id="plot-planner-skip" class="plot-btn warning-btn" type="button">跳过</button>
+                    <button id="plot-planner-pause" class="plot-btn" type="button">暂停</button>
+                    <button id="plot-planner-stop" class="plot-btn danger-btn" type="button">停止规划</button>
+                    <label class="auto-judge-toggle"><input id="plot-planner-auto-judge" type="checkbox" checked> 自动判定完成</label>
+                </div>
                 <div id="plot-planner-tasks-list" class="tasks-list"></div>
+            </div>
+            <div id="plot-planner-error" class="plot-planner-error" style="display: none;">
+                <span id="plot-planner-error-text"></span>
+                <button id="plot-planner-retry" class="plot-btn" type="button">重试</button>
+                <button id="plot-planner-cancel-request" class="plot-btn danger-btn" type="button">取消请求</button>
             </div>
         </div>
         <div class="plot-planner-footer">
@@ -172,6 +233,16 @@
         });
         $('#plot-planner-breakdown').on('click', handleBreakdown);
         $('#plot-planner-start').on('click', handleStartExecution);
+        $('#plot-context-preview').on('click', previewContext);
+        $('#plot-planner-prev').on('click', () => moveTask(-1));
+        $('#plot-planner-complete').on('click', () => completeCurrentTask('manual'));
+        $('#plot-planner-skip').on('click', () => completeCurrentTask('skipped'));
+        $('#plot-planner-pause').on('click', toggleExecutionPause);
+        $('#plot-planner-stop').on('click', stopExecution);
+        $('#plot-planner-retry').on('click', retryLastAction);
+        $('#plot-planner-cancel-request').on('click', cancelActiveRequest);
+        $('#plot-planner-auto-judge, #plot-context-chat, #plot-context-character, #plot-context-note, #plot-context-world, #plot-context-count')
+            .on('change', savePlannerState);
         
         // 模式切换显示
         $('#plot-planner-api-mode').on('change', function() {
@@ -205,10 +276,15 @@
                 context.eventSource.on(context.event_types.CHARACTER_MESSAGE_RENDERED, function (messageId) {
                     onMessageReceived(messageId);
                 });
+                context.eventSource.on(context.event_types.CHAT_CHANGED, function () {
+                    loadPlannerState();
+                });
             }
         } catch (e) {
             console.error('❌ [PlotPlanner] 注册事件监听失败:', e);
         }
+
+        loadPlannerState();
     }
 
     // ===== 轻量混淆加密 (Obfuscation) =====
@@ -505,61 +581,323 @@
         if (chatHist) chatHist.scrollTop = chatHist.scrollHeight;
     }
 
+    function getContextSettings() {
+        return {
+            includeChat: $('#plot-context-chat').prop('checked'),
+            includeCharacter: $('#plot-context-character').prop('checked'),
+            includeNote: $('#plot-context-note').prop('checked'),
+            includeWorld: $('#plot-context-world').prop('checked'),
+            messageCount: Math.max(1, Math.min(200, Number($('#plot-context-count').val()) || 20))
+        };
+    }
+
+    async function buildPlotContext() {
+        const context = SillyTavern.getContext();
+        const settings = getContextSettings();
+        const sections = [];
+        const stats = [];
+        const recentChat = Array.isArray(context.chat) ? context.chat.slice(-settings.messageCount) : [];
+
+        if (settings.includeCharacter && typeof context.getCharacterCardFields === 'function') {
+            const fields = context.getCharacterCardFields();
+            const characterText = [
+                fields.description && `角色描述：\n${fields.description}`,
+                fields.personality && `角色性格：\n${fields.personality}`,
+                fields.scenario && `当前场景：\n${fields.scenario}`,
+                fields.persona && `用户设定：\n${fields.persona}`
+            ].filter(Boolean).join('\n\n');
+            if (characterText) {
+                sections.push(`【角色与场景】\n${characterText}`);
+                stats.push('角色信息');
+            }
+        }
+
+        if (settings.includeNote) {
+            const note = context.chatMetadata?.note_prompt || '';
+            if (note.trim()) {
+                sections.push(`【作者注释】\n${note.trim()}`);
+                stats.push('作者注释');
+            }
+        }
+
+        if (settings.includeWorld && typeof context.getWorldInfoPrompt === 'function') {
+            const fields = typeof context.getCharacterCardFields === 'function' ? context.getCharacterCardFields() : {};
+            const chatForWorldInfo = recentChat.map(message => {
+                const name = message.name || (message.is_user ? context.name1 : context.name2) || '';
+                return `${name}: ${message.mes || ''}`;
+            }).reverse();
+            const worldInfo = await context.getWorldInfoPrompt(chatForWorldInfo, context.maxContext || 8192, true, {
+                personaDescription: fields.persona || '',
+                characterDescription: fields.description || '',
+                characterPersonality: fields.personality || '',
+                characterDepthPrompt: fields.charDepthPrompt || '',
+                scenario: fields.scenario || '',
+                creatorNotes: fields.creatorNotes || '',
+                trigger: 'normal'
+            });
+            const worldText = [
+                worldInfo.worldInfoBefore,
+                worldInfo.worldInfoAfter,
+                ...(worldInfo.worldInfoExamples || []).map(entry => entry.content || ''),
+                ...(worldInfo.worldInfoDepth || []).flatMap(group => group.entries || []),
+                ...(worldInfo.anBefore || []),
+                ...(worldInfo.anAfter || []),
+                ...Object.values(worldInfo.outletEntries || {}).flat()
+            ].filter(Boolean).join('\n\n');
+            if (worldText) {
+                sections.push(`【当前激活的世界书】\n${worldText}`);
+                stats.push('世界书');
+            }
+        }
+
+        if (settings.includeChat && recentChat.length > 0) {
+            const chatText = recentChat.map(message => {
+                const name = message.name || (message.is_user ? context.name1 : context.name2) || '未知';
+                return `${name}: ${message.mes || ''}`;
+            }).join('\n');
+            sections.push(`【最近 ${recentChat.length} 条聊天】\n${chatText}`);
+            stats.push(`${recentChat.length} 条聊天`);
+        }
+
+        return {
+            text: sections.join('\n\n'),
+            summary: stats.length ? `已收集：${stats.join('、')}` : '没有可用的上下文',
+            settings
+        };
+    }
+
+    async function previewContext() {
+        try {
+            setBusyButton('#plot-context-preview', true, '收集中...');
+            const result = await buildPlotContext();
+            $('#plot-context-summary').text(result.summary);
+            $('#plot-context-preview-text').text(result.text || '当前选项没有收集到内容。');
+            $('#plot-context-preview-panel').attr('open', true);
+        } catch (error) {
+            showError('上下文收集失败', error, previewContext);
+        } finally {
+            setBusyButton('#plot-context-preview', false, '预览本次上下文');
+        }
+    }
+
+    function snapshotPlannerState() {
+        return {
+            version: 2,
+            draft: currentDraft,
+            history: miniChatHistory,
+            tasks: currentTasks,
+            activeTaskIndex,
+            paused: isExecutionPaused,
+            autoJudge: $('#plot-planner-auto-judge').prop('checked'),
+            direction: $('#plot-planner-direction').val() || '',
+            nodeCount: Number($('#plot-planner-node-count').val()) || 3,
+            contextSettings: getContextSettings()
+        };
+    }
+
+    function savePlannerState() {
+        const context = SillyTavern.getContext();
+        if (!context?.chatMetadata) return;
+        context.chatMetadata[STATE_KEY] = snapshotPlannerState();
+        context.saveMetadataDebounced?.();
+    }
+
+    function loadPlannerState() {
+        const context = SillyTavern.getContext();
+        const state = context?.chatMetadata?.[STATE_KEY];
+        currentDraft = state?.draft || '';
+        miniChatHistory = Array.isArray(state?.history) ? state.history : [];
+        currentTasks = Array.isArray(state?.tasks) ? state.tasks.map(normalizeTask) : [];
+        activeTaskIndex = Number.isInteger(state?.activeTaskIndex) ? state.activeTaskIndex : -1;
+        isExecutionPaused = Boolean(state?.paused);
+
+        $('#plot-planner-chat-history').empty().append(
+            $('<div>').addClass('chat-message system-msg').text('生成草案后，可以继续提出修改意见。')
+        );
+        miniChatHistory.forEach(message => appendMiniChat(message.role, message.content));
+        $('#plot-planner-direction').val(state?.direction || '');
+        $('#plot-planner-node-count').val(state?.nodeCount || 3);
+        $('#plot-planner-auto-judge').prop('checked', state?.autoJudge !== false);
+
+        const settings = state?.contextSettings || {};
+        $('#plot-context-chat').prop('checked', settings.includeChat !== false);
+        $('#plot-context-character').prop('checked', settings.includeCharacter !== false);
+        $('#plot-context-note').prop('checked', settings.includeNote !== false);
+        $('#plot-context-world').prop('checked', settings.includeWorld !== false);
+        $('#plot-context-count').val(settings.messageCount || 20);
+
+        const hasDraft = Boolean(currentDraft);
+        $('#plot-planner-chat-input, #plot-planner-chat-send, #plot-planner-breakdown').prop('disabled', !hasDraft);
+        $('#plot-planner-execution-area').toggle(currentTasks.length > 0);
+        $('#plot-planner-chat-section').toggle(currentTasks.length === 0);
+        $('#plot-planner-start').toggle(currentTasks.length > 0 && activeTaskIndex < 0);
+        updatePauseButton();
+        renderTasks();
+        updatePromptInjection();
+    }
+
+    function setBusyButton(selector, busy, busyText) {
+        const button = $(selector);
+        if (!button.data('idle-text')) button.data('idle-text', button.text());
+        button.prop('disabled', busy).text(busy ? busyText : button.data('idle-text'));
+    }
+
+    function showError(message, error, retryAction) {
+        console.error(`[PlotPlanner] ${message}`, error);
+        lastFailedAction = typeof retryAction === 'function' ? retryAction : null;
+        $('#plot-planner-error-text').text(`${message}：${error?.message || error}`);
+        $('#plot-planner-retry').toggle(Boolean(lastFailedAction));
+        $('#plot-planner-error').css('display', 'flex');
+    }
+
+    function notify(level, message) {
+        if (typeof toastr !== 'undefined' && typeof toastr[level] === 'function') {
+            toastr[level](message, 'Plot Planner');
+        }
+    }
+
+    function normalizeTask(task, index) {
+        if (typeof task === 'string') {
+            return {
+                title: `任务 ${index + 1}`,
+                summary: task,
+                completionCriteria: '该节点的核心事件已经在剧情中明确发生。',
+                status: 'pending'
+            };
+        }
+        return {
+            title: String(task?.title || `任务 ${index + 1}`),
+            summary: String(task?.summary || ''),
+            completionCriteria: String(task?.completionCriteria || ''),
+            status: ['pending', 'active', 'completed', 'skipped'].includes(task?.status) ? task.status : 'pending'
+        };
+    }
+
+    function clearError() {
+        $('#plot-planner-error').hide();
+        lastFailedAction = null;
+    }
+
+    function retryLastAction() {
+        const action = lastFailedAction;
+        clearError();
+        action?.();
+    }
+
+    function cancelActiveRequest() {
+        if (!activeRequest) return;
+        activeRequest.cancelled = true;
+        activeRequest.controller?.abort();
+        const context = SillyTavern.getContext();
+        context.eventSource?.emit(context.event_types.GENERATION_STOPPED);
+        activeRequest = null;
+        $('#plot-planner-cancel-request').prop('disabled', true);
+    }
+
     // ===== 调用 LLM =====
-    async function callLLM(promptText) {
+    async function callLLM(promptText, options = {}) {
         const mode = $('#plot-planner-api-mode').val();
         let systemPrompt = $('#plot-planner-system-prompt').val().trim();
         if (!systemPrompt) systemPrompt = "你是一个专业的 RPG 跑团向剧情策划大师。请构思剧情大纲或任务拆解。不要输出不相关的废话。";
-        
+
+        if (activeRequest) throw new Error('已有一个剧情规划请求正在进行');
+        const request = { controller: new AbortController(), cancelled: false };
+        activeRequest = request;
+        $('#plot-planner-cancel-request').prop('disabled', false);
+        clearError();
+
+        const timeoutPromise = new Promise((_, reject) => {
+            request.timeoutId = setTimeout(() => reject(new Error('请求超时，请重试或检查模型连接')), REQUEST_TIMEOUT_MS);
+        });
+
         try {
             console.log("[PlotPlanner] 发送给大模型的 Prompt (模式: " + mode + ")");
-            
-            if (mode === 'custom') {
-                const url = $('#plot-planner-api-url').val().trim();
-                const key = $('#plot-planner-api-key').val().trim();
-                const model = $('#plot-planner-api-model').is(':visible') ? $('#plot-planner-api-model').val().trim() : $('#plot-planner-api-model-select').val();
-                
-                if (!url) throw new Error("独立 API URL 未配置，请填写完整 API 地址");
-                
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${key}`
-                    },
-                    body: JSON.stringify({
-                        model: model || 'gpt-3.5-turbo',
-                        messages: [
-                            { role: 'system', content: systemPrompt },
-                            { role: 'user', content: promptText }
-                        ],
-                        temperature: 0.7
-                    })
-                });
-                
-                if (!response.ok) throw new Error(`HTTP 错误 ${response.status}`);
-                const data = await response.json();
-                return data.choices?.[0]?.message?.content || "模型返回了异常结构结果。";
-                
-            } else {
-                const context = SillyTavern.getContext();
-                if (!context || typeof context.generateRaw !== 'function') {
-                    throw new Error("SillyTavern API 不可用。请确保已连接大模型。");
+            const generationPromise = mode === 'custom'
+                ? callCustomApi(promptText, systemPrompt, options, request.controller.signal)
+                : callSillyTavernApi(promptText, systemPrompt, options);
+            const response = await Promise.race([generationPromise, timeoutPromise]);
+            if (request.cancelled) throw new Error('请求已取消');
+            if (!response) throw new Error('模型返回了空结果');
+            return response;
+        } finally {
+            clearTimeout(request.timeoutId);
+            if (activeRequest === request) activeRequest = null;
+            $('#plot-planner-cancel-request').prop('disabled', true);
+        }
+    }
+
+    async function callCustomApi(promptText, systemPrompt, options, signal) {
+        const url = $('#plot-planner-api-url').val().trim();
+        const key = $('#plot-planner-api-key').val().trim();
+        const model = $('#plot-planner-api-model').is(':visible')
+            ? $('#plot-planner-api-model').val().trim()
+            : $('#plot-planner-api-model-select').val();
+        if (!url) throw new Error("独立 API URL 未配置，请填写完整 API 地址");
+
+        const body = {
+            model: model || 'gpt-3.5-turbo',
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: promptText }
+            ],
+            temperature: options.temperature ?? 0.7
+        };
+        if (options.jsonSchema) {
+            body.response_format = {
+                type: 'json_schema',
+                json_schema: {
+                    name: options.jsonSchema.name,
+                    description: options.jsonSchema.description,
+                    strict: options.jsonSchema.strict,
+                    schema: options.jsonSchema.value
                 }
-                
-                let response;
-                try {
-                    response = await context.generateRaw({ prompt: promptText, systemPrompt: systemPrompt });
-                } catch (err) {
-                    console.warn("[PlotPlanner] 对象式调用 generateRaw 失败，降级为字符串参数调用...", err);
-                    // 兼容旧版纯字符串参数
-                    response = await context.generateRaw(`${systemPrompt}\n\n${promptText}`);
-                }
-                return response || "模型返回了空结果。";
-            }
-        } catch (e) {
-            console.error(e);
-            return "生成失败，请检查模型连接：" + (e.message || e);
+            };
+        }
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${key}`
+            },
+            body: JSON.stringify(body),
+            signal
+        });
+        if (!response.ok) throw new Error(`HTTP 错误 ${response.status}`);
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (!content) throw new Error("模型返回了异常结构结果");
+        return content;
+    }
+
+    async function callSillyTavernApi(promptText, systemPrompt, options) {
+        const context = SillyTavern.getContext();
+        if (!context || typeof context.generateRaw !== 'function') {
+            throw new Error("SillyTavern API 不可用。请确保已连接大模型。");
+        }
+        return context.generateRaw({
+            prompt: promptText,
+            systemPrompt,
+            jsonSchema: options.jsonSchema || null,
+            responseLength: options.responseLength || null
+        });
+    }
+
+    function parseJsonResponse(text) {
+        if (typeof text !== 'string') return text;
+        const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+        return JSON.parse(cleaned);
+    }
+
+    async function callStructuredLLM(promptText, jsonSchema, options = {}) {
+        try {
+            return await callLLM(promptText, { ...options, jsonSchema });
+        } catch (error) {
+            const message = String(error?.message || error);
+            if (/取消|超时|正在进行|未配置|HTTP 40[13]/i.test(message)) throw error;
+            console.warn('[PlotPlanner] 当前模型不支持原生 JSON Schema，改用 JSON 文本模式。', error);
+            const schemaText = JSON.stringify(jsonSchema.value);
+            return callLLM(`${promptText}\n\n必须只输出 JSON，不要使用代码块。JSON Schema：\n${schemaText}`, options);
         }
     }
 
@@ -568,79 +906,107 @@
         saveCurrentProfile(); // 点击生成时自动保存一下当前配置
         const direction = $('#plot-planner-direction').val();
         const nodeCount = $('#plot-planner-node-count').val();
-
-        let lastMessages = '';
+        let plotContext;
         try {
-            const context = SillyTavern.getContext();
-            if (context && context.chat) {
-                lastMessages = context.chat.slice(-20).map(m => `${m.name}: ${m.mes}`).join('\n');
-            }
-        } catch (e) {
-            console.warn('[PlotPlanner] 读取聊天记录失败:', e);
+            setBusyButton('#plot-planner-generate-draft', true, '生成中...');
+            plotContext = await buildPlotContext();
+            $('#plot-context-summary').text(plotContext.summary);
+            $('#plot-context-preview-text').text(plotContext.text || '当前选项没有收集到内容。');
+
+            let prompt = `请基于以下剧情上下文，为接下来的剧情生成可继续商讨的大纲草案。\n\n${plotContext.text || '【剧情上下文】无'}\n\n`;
+            if (direction) prompt += `【玩家要求的方向或结局】\n${direction}\n\n`;
+            prompt += `请规划大约 ${nodeCount} 个阶段。说明每个阶段的目标、冲突、转折和与既有设定的联系，但暂时不要输出 JSON。`;
+
+            const response = await callLLM(prompt);
+            currentDraft = response;
+            miniChatHistory = [{ role: 'ai', content: response }];
+            $('#plot-planner-chat-history').empty();
+            appendMiniChat('ai', response);
+            $('#plot-planner-chat-input, #plot-planner-chat-send, #plot-planner-breakdown').prop('disabled', false);
+            savePlannerState();
+        } catch (error) {
+            showError('生成草案失败', error, handleGenerateDraft);
+        } finally {
+            setBusyButton('#plot-planner-generate-draft', false, '重新生成草案');
         }
-
-        let prompt = `你是一个剧情规划助手。请阅读以下最近的聊天记录，并为接下来的剧情生成一个大纲草案。\n\n【最近聊天记录】\n${lastMessages}\n\n`;
-        if (direction) {
-            prompt += `玩家要求的剧情方向/结局是：${direction}\n`;
-        }
-        prompt += `请生成一个大概包含 ${nodeCount} 个阶段的剧情大纲，每个阶段要有简短的核心冲突或转折。`;
-
-        $('#plot-planner-generate-draft').prop('disabled', true).text('生成中...');
-        const response = await callLLM(prompt);
-        $('#plot-planner-generate-draft').prop('disabled', false).text('重新生成草案');
-
-        appendMiniChat('ai', response);
-        miniChatHistory.push({ role: 'ai', content: response });
-
-        $('#plot-planner-chat-input').prop('disabled', false);
-        $('#plot-planner-chat-send').prop('disabled', false);
-        $('#plot-planner-breakdown').prop('disabled', false);
     }
 
     // ===== 商讨消息 =====
-    async function handleChatSend() {
-        const text = $('#plot-planner-chat-input').val().trim();
+    async function handleChatSend(retryText = '') {
+        const text = typeof retryText === 'string' && retryText
+            ? retryText
+            : $('#plot-planner-chat-input').val().trim();
         if (!text) return;
 
         $('#plot-planner-chat-input').val('');
         appendMiniChat('user', text);
         miniChatHistory.push({ role: 'user', content: text });
 
-        $('#plot-planner-chat-send').prop('disabled', true);
-        let prompt = "根据我们之前的商讨，玩家提出了新的修改意见：\n" + text + "\n请根据意见修改剧情大纲并返回最新的版本。";
-        const response = await callLLM(prompt);
-        appendMiniChat('ai', response);
-        miniChatHistory.push({ role: 'ai', content: response });
-        $('#plot-planner-chat-send').prop('disabled', false);
+        try {
+            setBusyButton('#plot-planner-chat-send', true, '修改中...');
+            const recentDiscussion = miniChatHistory.slice(-6).map(message =>
+                `${message.role === 'user' ? '玩家' : '规划器'}：${message.content}`
+            ).join('\n\n');
+            const prompt = `请修改当前剧情大纲。必须保留未被修改意见否定的有效内容，并返回一份完整的最新版大纲。
+
+【当前大纲】
+${currentDraft}
+
+【最近商讨】
+${recentDiscussion}
+
+【本轮修改意见】
+${text}`;
+            const response = await callLLM(prompt);
+            currentDraft = response;
+            appendMiniChat('ai', response);
+            miniChatHistory.push({ role: 'ai', content: response });
+            savePlannerState();
+        } catch (error) {
+            showError('修改大纲失败', error, () => handleChatSend(text));
+        } finally {
+            setBusyButton('#plot-planner-chat-send', false, '发送');
+        }
     }
 
     // ===== 阶段2: 拆解任务 =====
     async function handleBreakdown() {
-        $('#plot-planner-breakdown').prop('disabled', true).text('拆解中...');
-        
-        const lastDraft = miniChatHistory.length > 0 ? miniChatHistory[miniChatHistory.length - 1].content : "无大纲";
-        const prompt = "请将以下剧情大纲严格拆解成按顺序执行的子任务节点。每个任务必须简短且高度概括。每一行必须以 'Step X:' 开头（X是数字）。\n\n【剧情大纲】\n" + lastDraft;
-        
-        const response = await callLLM(prompt);
-        
-        // 解析 Step
-        const lines = response.split('\n');
-        currentTasks = lines.filter(line => line.toLowerCase().includes('step')).map(line => line.trim());
-        
-        if (currentTasks.length === 0) {
-            currentTasks = [
-                "Step 1: 解析失败，未发现带 'Step' 的内容",
-                "Step 2: 请手动在此编辑具体任务内容"
-            ];
+        try {
+            setBusyButton('#plot-planner-breakdown', true, '拆解中...');
+            const prompt = `将以下剧情大纲拆解成严格按顺序执行的任务。每个任务包含：
+1. title：简短标题；
+2. summary：该节点应发生的剧情；
+3. completionCriteria：可以从角色回复中客观判断的完成条件。
+
+只输出符合指定 JSON Schema 的结果。
+
+【剧情大纲】
+${currentDraft}`;
+            const response = await callStructuredLLM(prompt, TASK_SCHEMA, { temperature: 0.3 });
+            const parsed = parseJsonResponse(response);
+            if (!Array.isArray(parsed.tasks) || parsed.tasks.length === 0) {
+                throw new Error('模型没有返回有效任务');
+            }
+            currentTasks = parsed.tasks.map(task => ({
+                title: String(task.title || '').trim(),
+                summary: String(task.summary || '').trim(),
+                completionCriteria: String(task.completionCriteria || '').trim(),
+                status: 'pending'
+            }));
+            activeTaskIndex = -1;
+            renderTasks();
+            savePlannerState();
+
+            $('#plot-planner-settings-details').removeAttr('open');
+            $('#plot-planner-chat-section').slideUp();
+            $('#plot-planner-execution-area').slideDown();
+            $('#plot-planner-start').show();
+            $('#plot-planner-breakdown').hide();
+        } catch (error) {
+            showError('拆解任务失败', error, handleBreakdown);
+        } finally {
+            setBusyButton('#plot-planner-breakdown', false, '敲定并拆解任务');
         }
-
-        renderTasks();
-
-        $('#plot-planner-settings-details').removeAttr('open');
-        $('#plot-planner-chat-section').slideUp();
-        $('#plot-planner-execution-area').slideDown();
-        $('#plot-planner-start').show();
-        $('#plot-planner-breakdown').hide();
     }
 
     function renderTasks() {
@@ -649,25 +1015,45 @@
 
         currentTasks.forEach((task, index) => {
             const isActive = index === activeTaskIndex ? 'active' : '';
-            const isCompleted = index < activeTaskIndex ? 'completed' : '';
+            const isCompleted = task.status === 'completed' || task.status === 'skipped' ? 'completed' : '';
 
             const itemDiv = $('<div>').addClass(`task-item ${isActive} ${isCompleted}`);
             const headerDiv = $('<div>').addClass('task-header');
             
-            headerDiv.append($('<span>').text(`子任务 ${index + 1}`));
+            headerDiv.append($('<span>').text(`${index + 1}. ${task.title || '未命名任务'}`));
             if (index === activeTaskIndex) headerDiv.append($('<span>').text('(当前进行中)'));
-            if (index < activeTaskIndex) headerDiv.append($('<span>').text('(已完成 ✓)'));
+            if (task.status === 'completed') headerDiv.append($('<span>').text('(已完成)'));
+            if (task.status === 'skipped') headerDiv.append($('<span>').text('(已跳过)'));
             
-            const textarea = $('<textarea>').addClass('task-content').data('index', index).val(task);
+            const summary = $('<textarea>')
+                .addClass('task-content')
+                .attr('aria-label', `任务 ${index + 1} 内容`)
+                .data({ index, field: 'summary' })
+                .val(task.summary || '');
+            const criteria = $('<textarea>')
+                .addClass('task-content task-criteria')
+                .attr('aria-label', `任务 ${index + 1} 完成条件`)
+                .data({ index, field: 'completionCriteria' })
+                .val(task.completionCriteria || '');
             
-            itemDiv.append(headerDiv).append(textarea);
+            itemDiv.append(headerDiv)
+                .append($('<label>').addClass('task-field-label').text('剧情内容'))
+                .append(summary)
+                .append($('<label>').addClass('task-field-label').text('完成条件'))
+                .append(criteria);
             list.append(itemDiv);
         });
 
         $('.task-content').on('change', function () {
             const idx = $(this).data('index');
-            currentTasks[idx] = $(this).val();
+            const field = $(this).data('field');
+            if (currentTasks[idx] && field) currentTasks[idx][field] = $(this).val();
+            savePlannerState();
         });
+
+        const hasActiveTask = activeTaskIndex >= 0 && activeTaskIndex < currentTasks.length;
+        $('#plot-planner-prev').prop('disabled', activeTaskIndex <= 0);
+        $('#plot-planner-complete, #plot-planner-skip, #plot-planner-pause').prop('disabled', !hasActiveTask);
     }
 
     // ===== 注入与清理 Prompt =====
@@ -677,11 +1063,15 @@
 
         if (activeTaskIndex >= 0 && activeTaskIndex < currentTasks.length) {
             const currentTask = currentTasks[activeTaskIndex];
-            const injectionText = `[System Note (Plot Planner): \n当前的主线任务/剧情节点是：${currentTask}\n请在接下来的对话中，自然地引导剧情向这个方向发展。不要一次性跳到结局。\n当且仅当这个剧情节点彻底发生并结束时，请在回复的最后加上隐藏标记：<QuestComplete> ]`;
+            const injectionText = isExecutionPaused ? '' : `[System Note (Plot Planner):
+当前剧情节点：${currentTask.title}
+节点内容：${currentTask.summary}
+完成条件：${currentTask.completionCriteria}
+请在接下来的对话中自然地推动该节点，不要跳过必要过程，也不要提及剧情规划器。]`;
             
-            // 参数: id, text, position(1=IN_PROMPT), depth(0)
+            // IN_CHAT at depth 0, system role.
             context.setExtensionPrompt('plot-planner', injectionText, 1, 0);
-            console.log("[PlotPlanner] 已注入任务提示词:", currentTask);
+            console.log("[PlotPlanner] 已更新任务提示词:", currentTask.title);
         } else {
             context.setExtensionPrompt('plot-planner', '', 1, 0);
             console.log("[PlotPlanner] 已清除任务提示词");
@@ -691,55 +1081,134 @@
     // ===== 正式启动 =====
     function handleStartExecution() {
         activeTaskIndex = 0;
+        currentTasks.forEach(task => {
+            if (!task.status || task.status === 'active') task.status = 'pending';
+        });
+        currentTasks[0].status = 'active';
+        isExecutionPaused = false;
         renderTasks();
         toggleModal();
         updatePromptInjection();
+        savePlannerState();
         if (typeof toastr !== 'undefined') {
             toastr.success("🗺️ 剧情规划已启动！当前执行：任务 1", "Plot Planner");
         }
     }
 
-    // ===== 消息拦截 =====
-    function onMessageReceived(messageId) {
-        if (activeTaskIndex === -1 || activeTaskIndex >= currentTasks.length) return;
+    function moveTask(offset) {
+        if (currentTasks.length === 0) return;
+        const nextIndex = Math.max(0, Math.min(currentTasks.length - 1, activeTaskIndex + offset));
+        if (nextIndex === activeTaskIndex) return;
+        if (currentTasks[activeTaskIndex]) currentTasks[activeTaskIndex].status = 'pending';
+        activeTaskIndex = nextIndex;
+        currentTasks[activeTaskIndex].status = 'active';
+        isExecutionPaused = false;
+        updatePauseButton();
+        renderTasks();
+        updatePromptInjection();
+        savePlannerState();
+    }
 
+    function completeCurrentTask(status = 'completed') {
+        if (activeTaskIndex < 0 || activeTaskIndex >= currentTasks.length) return;
+        currentTasks[activeTaskIndex].status = status === 'skipped' ? 'skipped' : 'completed';
+        const completedNumber = activeTaskIndex + 1;
+        activeTaskIndex++;
+
+        if (activeTaskIndex < currentTasks.length) {
+            currentTasks[activeTaskIndex].status = 'active';
+            notify('success', `任务 ${completedNumber} 已${status === 'skipped' ? '跳过' : '完成'}，已进入下一节点。`);
+        } else {
+            activeTaskIndex = -1;
+            notify('info', '所有剧情节点已结束。');
+        }
+        renderTasks();
+        updatePromptInjection();
+        savePlannerState();
+    }
+
+    function toggleExecutionPause() {
+        isExecutionPaused = !isExecutionPaused;
+        updatePauseButton();
+        updatePromptInjection();
+        savePlannerState();
+    }
+
+    function updatePauseButton() {
+        $('#plot-planner-pause').text(isExecutionPaused ? '继续' : '暂停');
+    }
+
+    function stopExecution() {
+        activeTaskIndex = -1;
+        isExecutionPaused = false;
+        currentTasks.forEach(task => {
+            if (task.status === 'active') task.status = 'pending';
+        });
+        updatePauseButton();
+        renderTasks();
+        updatePromptInjection();
+        savePlannerState();
+        notify('info', '剧情规划已停止，任务清单仍保留。');
+    }
+
+    async function onMessageReceived(messageId) {
+        if (isExecutionPaused || isJudgingCompletion) return;
+        if (!$('#plot-planner-auto-judge').prop('checked')) return;
+        if (activeTaskIndex < 0 || activeTaskIndex >= currentTasks.length) return;
+
+        const context = SillyTavern.getContext();
+        const message = context?.chat?.[Number(messageId)];
+        if (!message || message.is_user || !message.mes) return;
+        await judgeTaskCompletion(message.mes);
+    }
+
+    async function judgeTaskCompletion(messageText) {
+        const taskIndexAtStart = activeTaskIndex;
+        const task = currentTasks[taskIndexAtStart];
+        if (!task) return;
+        isJudgingCompletion = true;
         try {
-            const context = SillyTavern.getContext();
-            if (!context || !context.chat) return;
-
-            const lastMsg = context.chat[context.chat.length - 1];
-            if (lastMsg && !lastMsg.is_user && lastMsg.mes && lastMsg.mes.includes('<QuestComplete>')) {
-                // 删除数据层的标签
-                lastMsg.mes = lastMsg.mes.replace(/<QuestComplete>/gi, '').trim();
-                
-                // 删除 UI DOM 层的标签
-                const msgEl = $('.mes_text').last();
-                if (msgEl.length > 0) {
-                    msgEl.html(msgEl.html().replace(/&lt;QuestComplete&gt;|<QuestComplete>/gi, ''));
+            const judgeSchema = {
+                name: 'plot_task_completion',
+                strict: true,
+                value: {
+                    type: 'object',
+                    properties: {
+                        complete: { type: 'boolean' },
+                        confidence: { type: 'number' },
+                        reason: { type: 'string' }
+                    },
+                    required: ['complete', 'confidence', 'reason'],
+                    additionalProperties: false
                 }
-                
-                if (typeof context.saveChat === 'function') {
-                    context.saveChat();
-                }
+            };
+            const prompt = `判断最新角色回复是否已经满足当前剧情节点的完成条件。只能依据回复中实际发生的内容，不要因为提到了未来计划就判定完成。
 
-                activeTaskIndex++;
-                renderTasks();
-                updatePromptInjection();
+【当前节点】
+${task.title}
+${task.summary}
 
-                if (activeTaskIndex < currentTasks.length) {
-                    if (typeof toastr !== 'undefined') {
-                        toastr.success(`✅ 任务 ${activeTaskIndex} 已完成！推进到下一个任务。`, "Plot Planner");
-                    }
-                } else {
-                    if (typeof toastr !== 'undefined') {
-                        toastr.info("🎉 所有剧情节点已完成！", "Plot Planner");
-                    }
-                    activeTaskIndex = -1;
-                    updatePromptInjection();
-                }
+【完成条件】
+${task.completionCriteria}
+
+【最新角色回复】
+${messageText}
+
+返回 JSON。confidence 范围为 0 到 1。`;
+            const result = parseJsonResponse(await callStructuredLLM(prompt, judgeSchema, {
+                temperature: 0.1,
+                responseLength: 256
+            }));
+            if (activeTaskIndex === taskIndexAtStart && result.complete === true && Number(result.confidence) >= 0.75) {
+                completeCurrentTask('completed');
+            } else if (result.reason) {
+                console.info('[PlotPlanner] 当前任务尚未完成:', result.reason);
             }
-        } catch (e) {
-            console.error('[PlotPlanner] 消息拦截出错:', e);
+        } catch (error) {
+            console.warn('[PlotPlanner] 自动完成判定失败:', error);
+            notify('warning', '自动完成判定失败，可稍后手动完成任务。');
+        } finally {
+            isJudgingCompletion = false;
         }
     }
 
