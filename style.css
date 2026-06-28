@@ -15,7 +15,8 @@
     top: 0;
     left: 0;
     width: 100vw;
-    height: 100vh;
+    height: 100%;
+    height: 100dvh;
     background: rgba(0, 0, 0, 0.7);
     backdrop-filter: blur(5px);
     z-index: 9999;
@@ -109,6 +110,7 @@
 
 .plot-planner-body {
     flex: 1;
+    min-height: 0;
     padding: 20px;
     display: flex;
     flex-direction: column;
@@ -233,7 +235,7 @@
 /* 聊天区 */
 .plot-planner-chat-area {
     flex: 1;
-    min-height: 250px;
+    min-height: 200px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
@@ -541,64 +543,6 @@
     overflow-wrap: anywhere;
 }
 
-@media (max-width: 700px) {
-    .plot-planner-container {
-        width: 100%;
-        max-width: 100%;
-        height: 100dvh;
-        border: none;
-        border-radius: 0;
-    }
-
-    .plot-planner-header,
-    .plot-planner-footer {
-        padding: 12px;
-    }
-
-    .plot-planner-footer .plot-btn {
-        flex: 1 1 100%;
-    }
-
-    .plot-planner-body {
-        padding: 12px;
-    }
-
-    .config-row {
-        align-items: stretch;
-        flex-direction: column;
-        gap: 6px;
-    }
-
-    .config-row label {
-        flex-basis: auto;
-    }
-
-    .config-row input,
-    .config-row select,
-    .config-row textarea {
-        width: 100%;
-        min-width: 0;
-    }
-
-    .context-options {
-        align-items: flex-start;
-        flex-direction: column;
-    }
-
-    .execution-toolbar .plot-btn {
-        flex: 1 1 calc(50% - 8px);
-    }
-
-    .auto-judge-toggle {
-        width: 100%;
-    }
-
-    .plot-planner-error {
-        align-items: stretch;
-        flex-direction: column;
-    }
-}
-
 /* =========================================
    选项卡 (Tabs) 样式
    ========================================= */
@@ -661,4 +605,81 @@
 }
 .plot-planner-details-content {
     margin-top: 0;
+}
+
+@media (max-width: 700px) {
+    .plot-planner-container {
+        width: 100%;
+        max-width: 100%;
+        height: 100%;
+        height: 100dvh;
+        border: none;
+        border-radius: 0;
+    }
+
+    .plot-planner-header,
+    .plot-planner-footer {
+        padding: 10px 12px;
+    }
+
+    .plot-planner-footer {
+        gap: 8px;
+    }
+
+    .plot-planner-footer .plot-btn {
+        flex: 1 1 calc(50% - 8px);
+        margin: 0;
+    }
+
+    .plot-planner-body {
+        padding: 12px;
+    }
+
+    .config-row {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .config-row label {
+        flex-basis: auto;
+    }
+
+    .config-row input,
+    .config-row select,
+    .config-row textarea {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .context-options {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .execution-toolbar .plot-btn {
+        flex: 1 1 calc(50% - 8px);
+    }
+
+    .auto-judge-toggle {
+        width: 100%;
+    }
+
+    .plot-planner-error {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .plot-planner-tab-btn {
+        padding: 6px 10px;
+        font-size: 0.8rem;
+    }
+
+    .plot-planner-chat-area {
+        min-height: 150px;
+    }
+
+    .plot-planner-tabs {
+        padding-bottom: 6px;
+    }
 }
