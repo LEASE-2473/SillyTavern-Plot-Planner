@@ -1,5 +1,5 @@
 // ========================================================================
-// 剧情规划器 (Plot Planner) v2.1.2
+// 剧情规划器 (Plot Planner) v2.1.3
 // SillyTavern 第三方扩展 - RPG任务流式剧情管理 (含破限与多配置)
 // ========================================================================
 (function () {
@@ -12,7 +12,7 @@
     }
     window.PlotPlannerLoaded = true;
 
-    console.log('🗺️ 剧情规划器 v2.1.2 启动');
+    console.log('🗺️ 剧情规划器 v2.1.3 启动');
 
     // ===== 内部状态 =====
     let isModalOpen = false;
@@ -36,6 +36,10 @@
     const STATE_KEY = 'plot_planner_state';
     const REQUEST_TIMEOUT_MS = 90000;
     const DEBUG_LOG_LIMIT = 30;
+    const MIN_TASK_NODE_COUNT = 5;
+    const MAX_TASK_NODE_COUNT = 50;
+    const MIN_BREAKDOWN_RESPONSE_TOKENS = 16384;
+    const MAX_BREAKDOWN_RESPONSE_TOKENS = 65535;
     const DEFAULT_CONTEXT_FILTER_TAGS = [
         'draft_notes',
         'npc_char_status',
@@ -168,7 +172,7 @@
                     </div>
                     <div class="config-row">
                         <label for="plot-planner-node-count">期待任务节点数量:</label>
-                        <input type="number" id="plot-planner-node-count" value="3" min="1" max="10">
+                        <input type="number" id="plot-planner-node-count" value="5" min="5" max="50">
                     </div>
                         <button id="plot-planner-generate-draft" class="plot-btn primary-btn" style="margin-top: 10px; width: 100%;">生成草案</button>
                     </div>
@@ -1025,7 +1029,7 @@
             activeTaskIndex,
             paused: isExecutionPaused,
             direction: $('#plot-planner-direction').val() || '',
-            nodeCount: Number($('#plot-planner-node-count').val()) || 3,
+            nodeCount: normalizeTaskNodeCount($('#plot-planner-node-count').val()),
             contextSettings: getContextSettings()
         };
     }
@@ -1051,7 +1055,7 @@
         );
         miniChatHistory.forEach(message => appendMiniChat(message.role, message.content));
         $('#plot-planner-direction').val(state?.direction || '');
-        $('#plot-planner-node-count').val(state?.nodeCount || 3);
+        $('#plot-planner-node-count').val(normalizeTaskNodeCount(state?.nodeCount));
 
         const settings = state?.contextSettings || {};
         $('#plot-context-chat').prop('checked', settings.includeChat !== false);
@@ -1158,6 +1162,17 @@
         return parsedUrl.toString();
     }
 
+    function normalizeTaskNodeCount(value) {
+        return Math.max(MIN_TASK_NODE_COUNT, Math.min(MAX_TASK_NODE_COUNT, Number(value) || MIN_TASK_NODE_COUNT));
+    }
+
+    function getBreakdownResponseLength(nodeCount) {
+        return Math.min(
+            MAX_BREAKDOWN_RESPONSE_TOKENS,
+            Math.max(MIN_BREAKDOWN_RESPONSE_TOKENS, nodeCount * 2048)
+        );
+    }
+
     async function callLLM(promptText, options = {}) {
         const mode = $('#plot-planner-api-mode').val();
         let systemPrompt = String(options.systemPrompt ?? $('#plot-planner-system-prompt').val() ?? '').trim();
@@ -1181,7 +1196,7 @@
                 : callSillyTavernApi(promptText, systemPrompt, options);
             const response = await Promise.race([generationPromise, timeoutPromise]);
             if (request.cancelled) throw new Error('请求已取消');
-            if (!response) throw new Error('模型返回了空结果');
+            if (!response) throw new Error('模型返回了空结果，可能是输出额度耗尽或上游响应被中断');
             return response;
         } finally {
             clearTimeout(request.timeoutId);
@@ -1216,6 +1231,9 @@
                 }
             };
         }
+        if (Number.isFinite(options.responseLength) && options.responseLength > 0) {
+            body.max_tokens = Math.floor(options.responseLength);
+        }
 
         const response = await fetch(url, {
             method: 'POST',
@@ -1228,7 +1246,11 @@
         });
         if (!response.ok) throw new Error(`HTTP 错误 ${response.status}`);
         const data = await response.json();
-        const content = data.choices?.[0]?.message?.content;
+        const choice = data.choices?.[0];
+        const content = choice?.message?.content;
+        if (!content && choice?.finish_reason === 'length') {
+            throw new Error('模型输出达到长度上限且未返回正文，请减少节点数量或重新拆解');
+        }
         if (!content) throw new Error("模型返回了异常结构结果");
         return content;
     }
@@ -1304,7 +1326,8 @@
     async function handleGenerateDraft() {
         saveCurrentProfile(); // 点击生成时自动保存一下当前配置
         const direction = $('#plot-planner-direction').val();
-        const nodeCount = $('#plot-planner-node-count').val();
+        const nodeCount = normalizeTaskNodeCount($('#plot-planner-node-count').val());
+        $('#plot-planner-node-count').val(nodeCount);
         let plotContext;
         try {
             setBusyButton('#plot-planner-generate-draft', true, '生成中...');
@@ -1379,7 +1402,9 @@ ${PLOT_OUTLINE_FORMAT_PROMPT}`;
         try {
             setBusyButton('#plot-planner-breakdown', true, '拆解中...');
             setBusyButton('#plot-planner-rebreakdown', true, '重新拆解中...');
-            const nodeCount = Math.max(1, Math.min(10, Number($('#plot-planner-node-count').val()) || 3));
+            const nodeCount = normalizeTaskNodeCount($('#plot-planner-node-count').val());
+            const responseLength = getBreakdownResponseLength(nodeCount);
+            $('#plot-planner-node-count').val(nodeCount);
             const breakdownSystemPrompt = $('#plot-planner-breakdown-prompt').val().trim() || DEFAULT_BREAKDOWN_SYSTEM_PROMPT;
             const prompt = `请把下面“最终敲定的剧情规划”转换成可逐步发送给 SillyTavern 主聊天 AI 执行的任务 JSON。
 
@@ -1407,7 +1432,7 @@ ${PLOT_OUTLINE_FORMAT_PROMPT}`;
 ${currentDraft}`;
             const response = await callStructuredLLM(prompt, TASK_SCHEMA, {
                 temperature: 0.2,
-                responseLength: 4096,
+                responseLength,
                 systemPrompt: breakdownSystemPrompt,
                 debugLabel: '任务节点拆分'
             });
