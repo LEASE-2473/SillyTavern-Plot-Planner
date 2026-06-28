@@ -1,5 +1,40 @@
 # CODEX_CHANGELOG
 
+## 2026-06-28 - 自动补全独立 API 生成端点
+
+### 用户目标
+
+允许用户在独立 OpenAI 兼容 API 配置中只填写到 `/v1`，避免遗漏 `/chat/completions` 导致生成草案返回 HTTP 405。
+
+### 主要修改内容
+
+- 新增独立 API URL 解析函数：以 `/v1` 结尾时自动补全 `/chat/completions`。
+- 兼容用户填写完整 `/v1/chat/completions`，不会重复追加；误填 `/models` 时会切换为生成端点。
+- API URL 输入框示例和说明改为只需填写到 `/v1`。
+- 插件版本由 `2.0.9` 更新为 `2.1.0`。
+
+### 修改的文件
+
+- `index.js`
+- `manifest.json`
+- `PROJECT_CONTEXT.md`
+- `CODEX_CHANGELOG.md`
+
+### 执行的验证命令及结果
+
+- `node --check .\plot-planner\index.js`：通过，无语法错误输出。
+- `node -e "JSON.parse(...manifest.json...)"`：通过，输出 `manifest ok`。
+- URL 解析单元断言：通过，确认 `/v1`、`/v1/`、完整 `/chat/completions` 与 `/models` 四种输入均解析为正确生成端点。
+- `git -C .\plot-planner diff --check`：通过，仅输出现有行尾转换提示。
+
+### 未完成事项
+
+- 尚未在真实 SillyTavern UI 中使用独立 API 端到端生成草案。
+
+### 已知风险与后续建议
+
+- 自动补全只针对标准 OpenAI 兼容 `/v1` 与 `/models` 路径；其他厂商的非标准完整端点保持原样。
+
 ## 2026-06-28 - 增加手动重新拆解剧情并移除 JSON 修复请求
 
 ### 用户目标

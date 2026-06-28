@@ -1,5 +1,5 @@
 // ========================================================================
-// 剧情规划器 (Plot Planner) v2.0.9
+// 剧情规划器 (Plot Planner) v2.1.0
 // SillyTavern 第三方扩展 - RPG任务流式剧情管理 (含破限与多配置)
 // ========================================================================
 (function () {
@@ -12,7 +12,7 @@
     }
     window.PlotPlannerLoaded = true;
 
-    console.log('🗺️ 剧情规划器 v2.0.9 启动');
+    console.log('🗺️ 剧情规划器 v2.1.0 启动');
 
     // ===== 内部状态 =====
     let isModalOpen = false;
@@ -191,7 +191,7 @@
                         <div id="plot-planner-custom-api-settings" style="display: none; margin-top: 10px;">
                             <div class="config-row">
                                 <label>API URL:</label>
-                                <input type="text" id="plot-planner-api-url" placeholder="https://api.openai.com/v1/chat/completions">
+                                <input type="text" id="plot-planner-api-url" placeholder="https://api.openai.com/v1">
                             </div>
                             <div class="config-row">
                                 <label>API Key (安全):</label>
@@ -203,7 +203,7 @@
                                 <input type="text" id="plot-planner-api-model" placeholder="gpt-3.5-turbo" style="flex:1;">
                                 <button id="plot-planner-api-test" class="plot-btn" style="margin-left: 5px;">拉取模型测试</button>
                             </div>
-                            <div style="font-size: 0.8rem; color: #888; margin-top: 5px;">注：直接请求外部 API 可能遇到浏览器跨域(CORS)拦截。如拉取模型失败，可直接手动输入模型名称兜底。</div>
+                            <div style="font-size: 0.8rem; color: #888; margin-top: 5px;">API URL 填到 /v1 即可，生成时会自动补全 /chat/completions；直接请求外部 API 仍可能遇到浏览器跨域(CORS)拦截。</div>
                         </div>
                     </div>
 
@@ -1028,6 +1028,29 @@
     }
 
     // ===== 调用 LLM =====
+    function resolveChatCompletionsUrl(rawUrl) {
+        const value = String(rawUrl || '').trim();
+        if (!value) throw new Error('独立 API URL 未配置，请填写到 /v1');
+
+        let parsedUrl;
+        try {
+            parsedUrl = new URL(value);
+        } catch {
+            throw new Error('独立 API URL 格式无效，请填写完整的 http:// 或 https:// 地址');
+        }
+
+        const pathname = parsedUrl.pathname.replace(/\/+$/, '');
+        if (/\/v1$/i.test(pathname)) {
+            parsedUrl.pathname = `${pathname}/chat/completions`;
+        } else if (/\/models$/i.test(pathname)) {
+            parsedUrl.pathname = pathname.replace(/\/models$/i, '/chat/completions');
+        } else {
+            parsedUrl.pathname = pathname;
+        }
+        parsedUrl.hash = '';
+        return parsedUrl.toString();
+    }
+
     async function callLLM(promptText, options = {}) {
         const mode = $('#plot-planner-api-mode').val();
         let systemPrompt = String(options.systemPrompt ?? $('#plot-planner-system-prompt').val() ?? '').trim();
@@ -1061,12 +1084,11 @@
     }
 
     async function callCustomApi(promptText, systemPrompt, options, signal) {
-        const url = $('#plot-planner-api-url').val().trim();
+        const url = resolveChatCompletionsUrl($('#plot-planner-api-url').val());
         const key = $('#plot-planner-api-key').val().trim();
         const model = $('#plot-planner-api-model').is(':visible')
             ? $('#plot-planner-api-model').val().trim()
             : $('#plot-planner-api-model-select').val();
-        if (!url) throw new Error("独立 API URL 未配置，请填写完整 API 地址");
 
         const body = {
             model: model || 'gpt-3.5-turbo',
