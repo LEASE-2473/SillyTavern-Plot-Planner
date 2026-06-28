@@ -1,5 +1,5 @@
 // ========================================================================
-// 剧情规划器 (Plot Planner) v2.0.5
+// 剧情规划器 (Plot Planner) v2.0.7
 // SillyTavern 第三方扩展 - RPG任务流式剧情管理 (含破限与多配置)
 // ========================================================================
 (function () {
@@ -12,7 +12,7 @@
     }
     window.PlotPlannerLoaded = true;
 
-    console.log('🗺️ 剧情规划器 v2.0.5 启动');
+    console.log('🗺️ 剧情规划器 v2.0.7 启动');
 
     // ===== 内部状态 =====
     let isModalOpen = false;
@@ -23,6 +23,8 @@
     let isExecutionPaused = false;
     let activeRequest = null;
     let lastFailedAction = null;
+    let debugPromptLogs = [];
+    let lastExecutionPrompt = '';
     
     // 多配置与预设
     let apiProfiles = [];
@@ -32,6 +34,16 @@
 
     const STATE_KEY = 'plot_planner_state';
     const REQUEST_TIMEOUT_MS = 90000;
+    const DEBUG_LOG_LIMIT = 30;
+    const DEFAULT_CONTEXT_FILTER_TAGS = [
+        'draft_notes',
+        'npc_char_status',
+        'Love_Cheat_history',
+        'Love_Cheat',
+        'w2g',
+        'catsay',
+        'details'
+    ].join(', ');
     const EXTENSION_PROMPT_TYPES = {
         NONE: -1,
         IN_PROMPT: 0,
@@ -207,6 +219,27 @@
                         </div>
                     </div>
 
+                    <!-- 上下文过滤设置 -->
+                    <div class="plot-planner-config" style="margin-bottom: 10px;">
+                        <div class="config-row" style="align-items: flex-start; margin-top: 5px;">
+                            <label>聊天标签过滤:</label>
+                            <div style="flex:1;">
+                                <label class="inline-option"><input type="checkbox" id="plot-context-filter-tags" checked> 生成剧情上下文时过滤黑名单标签块</label>
+                                <input type="text" id="plot-context-filter-tags-list" style="width: 100%; margin-top: 6px;" placeholder="draft_notes, details, think, !--">
+                                <div class="tag-filter-presets">
+                                    <span>常用：</span>
+                                    <button class="tag-filter-chip" type="button" data-tag="draft_notes">draft_notes</button>
+                                    <button class="tag-filter-chip" type="button" data-tag="details">details</button>
+                                    <button class="tag-filter-chip" type="button" data-tag="think">think</button>
+                                    <button class="tag-filter-chip" type="button" data-tag="thinking">thinking</button>
+                                    <button class="tag-filter-chip" type="button" data-tag="!--">!--</button>
+                                    <button id="plot-context-filter-tags-reset" class="tag-filter-chip danger-chip" type="button">重置</button>
+                                </div>
+                                <div style="font-size: 0.8rem; color: #888; margin-top: 5px;">说明：填标签名即可，自动匹配成 &lt;标签&gt;...&lt;/标签&gt;；!-- 会匹配 HTML 注释。只过滤发送给剧情规划 AI 的上下文副本，不修改聊天正文，不限制剩余正文长度。</div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- 提示词预设 -->
                     <div class="plot-planner-config" style="margin-bottom: 10px;">
                         <div class="config-row">
@@ -229,6 +262,15 @@
                     </div>
 
                 </div>
+            </details>
+            <details class="plot-planner-debug-panel" id="plot-planner-debug-panel">
+                <summary>🐞 调试：查看发送给 AI / 注入主聊天的提示词</summary>
+                <div class="plot-planner-debug-toolbar">
+                    <select id="plot-planner-debug-select"></select>
+                    <button id="plot-planner-debug-refresh" class="plot-btn" type="button">刷新</button>
+                    <button id="plot-planner-debug-clear" class="plot-btn warning-btn" type="button">清空记录</button>
+                </div>
+                <pre id="plot-planner-debug-output">暂无调试记录。</pre>
             </details>
             <div class="plot-planner-chat-area" id="plot-planner-chat-section">
                 <div id="plot-planner-chat-history" class="chat-history">
@@ -304,7 +346,17 @@
         $('#plot-planner-clear').on('click', clearPlanner);
         $('#plot-planner-retry').on('click', retryLastAction);
         $('#plot-planner-cancel-request').on('click', cancelActiveRequest);
-        $('#plot-context-chat, #plot-context-character, #plot-context-note, #plot-context-world, #plot-context-count')
+        $('#plot-planner-debug-refresh').on('click', renderDebugPanel);
+        $('#plot-planner-debug-clear').on('click', clearDebugLogs);
+        $('#plot-planner-debug-select').on('change', renderSelectedDebugLog);
+        $('.tag-filter-chip[data-tag]').on('click', function () {
+            addContextFilterTag($(this).data('tag'));
+        });
+        $('#plot-context-filter-tags-reset').on('click', function () {
+            $('#plot-context-filter-tags-list').val(DEFAULT_CONTEXT_FILTER_TAGS);
+            savePlannerState();
+        });
+        $('#plot-context-chat, #plot-context-character, #plot-context-note, #plot-context-world, #plot-context-filter-tags, #plot-context-filter-tags-list, #plot-context-count')
             .on('change', savePlannerState);
         
         // 模式切换显示
@@ -653,14 +705,62 @@
         if (chatHist) chatHist.scrollTop = chatHist.scrollHeight;
     }
 
+    function parseContextFilterTags(value = '') {
+        return String(value || '')
+            .split(/[,，\s]+/)
+            .map(tag => tag.trim().replace(/^<\s*/, '').replace(/\s*>$/, '').replace(/^\/+|\/+$/g, ''))
+            .filter(Boolean)
+            .filter((tag, index, list) => list.findIndex(item => item.toLowerCase() === tag.toLowerCase()) === index);
+    }
+
+    function addContextFilterTag(tagName) {
+        const tags = parseContextFilterTags($('#plot-context-filter-tags-list').val());
+        const tag = String(tagName || '').trim();
+        if (!tag) return;
+        if (!tags.some(item => item.toLowerCase() === tag.toLowerCase())) {
+            tags.push(tag);
+            $('#plot-context-filter-tags-list').val(tags.join(', '));
+            savePlannerState();
+        }
+    }
+
     function getContextSettings() {
         return {
             includeChat: $('#plot-context-chat').prop('checked'),
             includeCharacter: $('#plot-context-character').prop('checked'),
             includeNote: $('#plot-context-note').prop('checked'),
             includeWorld: $('#plot-context-world').prop('checked'),
+            filterChatTags: $('#plot-context-filter-tags').prop('checked') !== false,
+            filterTags: parseContextFilterTags($('#plot-context-filter-tags-list').val() || DEFAULT_CONTEXT_FILTER_TAGS),
             messageCount: Math.max(1, Math.min(200, Number($('#plot-context-count').val()) || 20))
         };
+    }
+
+    function stripTaggedBlock(text, tagName) {
+        if (tagName === '!--') {
+            return text.replace(/<!--[\s\S]*?-->/g, '');
+        }
+        const escapedTag = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const blockRegex = new RegExp(`<\\s*${escapedTag}\\b[^>]*>[\\s\\S]*?<\\s*\\/\\s*${escapedTag}\\s*>`, 'gi');
+        return text.replace(blockRegex, '');
+    }
+
+    function filterChatMessageForPlanning(rawText, filterTags = []) {
+        let text = String(rawText || '');
+        filterTags.forEach(tag => {
+            text = stripTaggedBlock(text, tag);
+        });
+        return text
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+    }
+
+    function formatChatMessageForPlanning(message, context, settings) {
+        const name = message.name || (message.is_user ? context.name1 : context.name2) || '未知';
+        const original = String(message.mes || '');
+        const filtered = settings.filterChatTags ? filterChatMessageForPlanning(original, settings.filterTags) : original.trim();
+        if (!filtered) return '';
+        return `${name}: ${filtered}`;
     }
 
     async function buildPlotContext() {
@@ -696,7 +796,8 @@
             const fields = typeof context.getCharacterCardFields === 'function' ? context.getCharacterCardFields() : {};
             const chatForWorldInfo = recentChat.map(message => {
                 const name = message.name || (message.is_user ? context.name1 : context.name2) || '';
-                return `${name}: ${message.mes || ''}`;
+                const text = settings.filterChatTags ? filterChatMessageForPlanning(message.mes || '', settings.filterTags) : (message.mes || '');
+                return `${name}: ${text}`;
             }).reverse();
             const worldInfo = await context.getWorldInfoPrompt(chatForWorldInfo, context.maxContext || 8192, true, {
                 personaDescription: fields.persona || '',
@@ -723,12 +824,13 @@
         }
 
         if (settings.includeChat && recentChat.length > 0) {
-            const chatText = recentChat.map(message => {
-                const name = message.name || (message.is_user ? context.name1 : context.name2) || '未知';
-                return `${name}: ${message.mes || ''}`;
-            }).join('\n');
-            sections.push(`【最近 ${recentChat.length} 条聊天】\n${chatText}`);
-            stats.push(`${recentChat.length} 条聊天`);
+            const chatLines = recentChat
+                .map(message => formatChatMessageForPlanning(message, context, settings))
+                .filter(Boolean);
+            if (chatLines.length > 0) {
+                sections.push(`【最近 ${chatLines.length} 条聊天】\n${chatLines.join('\n')}`);
+                stats.push(`${chatLines.length} 条聊天${settings.filterChatTags ? '（已过滤标签块）' : ''}`);
+            }
         }
 
         return {
@@ -750,6 +852,70 @@
         } finally {
             setBusyButton('#plot-context-preview', false, '预览本次上下文');
         }
+    }
+
+    function addDebugLog(label, payload = {}) {
+        const entry = {
+            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            time: new Date().toLocaleTimeString(),
+            label,
+            ...payload
+        };
+        debugPromptLogs.unshift(entry);
+        debugPromptLogs = debugPromptLogs.slice(0, DEBUG_LOG_LIMIT);
+        renderDebugPanel();
+    }
+
+    function clearDebugLogs() {
+        debugPromptLogs = [];
+        renderDebugPanel();
+    }
+
+    function renderDebugPanel() {
+        const select = $('#plot-planner-debug-select');
+        if (!select.length) return;
+        const currentValue = select.val();
+        select.empty();
+
+        if (lastExecutionPrompt) {
+            select.append($('<option>').val('__execution__').text('当前任务执行注入'));
+        }
+        debugPromptLogs.forEach(entry => {
+            select.append($('<option>').val(entry.id).text(`${entry.time} · ${entry.label}`));
+        });
+
+        if (currentValue && select.find(`option[value="${currentValue}"]`).length) {
+            select.val(currentValue);
+        } else if (lastExecutionPrompt) {
+            select.val('__execution__');
+        }
+        renderSelectedDebugLog();
+    }
+
+    function renderSelectedDebugLog() {
+        const value = $('#plot-planner-debug-select').val();
+        const output = $('#plot-planner-debug-output');
+        if (!output.length) return;
+
+        if (value === '__execution__') {
+            output.text(lastExecutionPrompt || '当前没有任务执行注入。');
+            return;
+        }
+
+        const entry = debugPromptLogs.find(item => item.id === value);
+        if (!entry) {
+            output.text('暂无调试记录。');
+            return;
+        }
+
+        const parts = [
+            `【时间】${entry.time}`,
+            `【类型】${entry.label}`,
+            entry.mode && `【模式】${entry.mode}`,
+            entry.systemPrompt && `【System Prompt】\n${entry.systemPrompt}`,
+            entry.promptText && `【User Prompt / Content】\n${entry.promptText}`
+        ].filter(Boolean);
+        output.text(parts.join('\n\n'));
     }
 
     function snapshotPlannerState() {
@@ -794,6 +960,10 @@
         $('#plot-context-character').prop('checked', settings.includeCharacter !== false);
         $('#plot-context-note').prop('checked', settings.includeNote !== false);
         $('#plot-context-world').prop('checked', settings.includeWorld !== false);
+        $('#plot-context-filter-tags').prop('checked', settings.filterChatTags !== false);
+        $('#plot-context-filter-tags-list').val(Array.isArray(settings.filterTags) && settings.filterTags.length
+            ? settings.filterTags.join(', ')
+            : DEFAULT_CONTEXT_FILTER_TAGS);
         $('#plot-context-count').val(settings.messageCount || 20);
 
         const hasDraft = Boolean(currentDraft);
@@ -805,6 +975,7 @@
         updatePauseButton();
         renderTasks();
         updatePromptInjection();
+        renderDebugPanel();
     }
 
     function setBusyButton(selector, busy, busyText) {
@@ -870,6 +1041,7 @@
         const mode = $('#plot-planner-api-mode').val();
         let systemPrompt = String(options.systemPrompt ?? $('#plot-planner-system-prompt').val() ?? '').trim();
         if (!systemPrompt) systemPrompt = DEFAULT_PLANNING_SYSTEM_PROMPT;
+        addDebugLog(options.debugLabel || 'LLM 请求', { mode, systemPrompt, promptText });
 
         if (activeRequest) throw new Error('已有一个剧情规划请求正在进行');
         const request = { controller: new AbortController(), cancelled: false };
@@ -1027,7 +1199,8 @@ ${String(rawResponse || '')}`;
         return callStructuredLLM(prompt, TASK_SCHEMA, {
             temperature: 0,
             responseLength: 2048,
-            systemPrompt: BREAKDOWN_REPAIR_SYSTEM_PROMPT
+            systemPrompt: BREAKDOWN_REPAIR_SYSTEM_PROMPT,
+            debugLabel: '任务 JSON 修复'
         });
     }
 
@@ -1048,7 +1221,7 @@ ${String(rawResponse || '')}`;
             prompt += `【期望阶段数量】\n大约 ${nodeCount} 个阶段。\n\n`;
             prompt += `${PLOT_OUTLINE_FORMAT_PROMPT}\n\n请只输出上述固定格式的剧情规划，不要输出 JSON。`;
 
-            const response = await callLLM(prompt);
+            const response = await callLLM(prompt, { debugLabel: '剧情草案生成' });
             currentDraft = response;
             miniChatHistory = [{ role: 'ai', content: response }];
             $('#plot-planner-chat-history').empty();
@@ -1092,7 +1265,7 @@ ${text}
 
 【固定格式要求】
 ${PLOT_OUTLINE_FORMAT_PROMPT}`;
-            const response = await callLLM(prompt);
+            const response = await callLLM(prompt, { debugLabel: '剧情大纲商讨修改' });
             currentDraft = response;
             appendMiniChat('ai', response);
             miniChatHistory.push({ role: 'ai', content: response });
@@ -1137,7 +1310,8 @@ ${currentDraft}`;
             const response = await callStructuredLLM(prompt, TASK_SCHEMA, {
                 temperature: 0.2,
                 responseLength: 4096,
-                systemPrompt: breakdownSystemPrompt
+                systemPrompt: breakdownSystemPrompt,
+                debugLabel: '任务节点拆分'
             });
             let tasks;
             try {
@@ -1250,9 +1424,13 @@ ${currentTask.completionCriteria}
             
             // IN_PROMPT places the task with extension/system prompts, after world info in Chat Completion flows.
             context.setExtensionPrompt('plot-planner', injectionText, EXTENSION_PROMPT_TYPES.IN_PROMPT, 0);
+            lastExecutionPrompt = injectionText;
+            renderDebugPanel();
             console.log("[PlotPlanner] 已更新任务提示词:", currentTask.title);
         } else {
             context.setExtensionPrompt('plot-planner', '', EXTENSION_PROMPT_TYPES.IN_PROMPT, 0);
+            lastExecutionPrompt = '';
+            renderDebugPanel();
             console.log("[PlotPlanner] 已清除任务提示词");
         }
     }

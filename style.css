@@ -151,25 +151,26 @@
 .plot-generation-panel {
     border-color: #3f5874;
     background: #222832;
+    padding: 10px 12px;
 }
 
 .plot-generation-title {
-    margin-bottom: 12px;
+    margin-bottom: 8px;
     color: #f0f4ff;
-    font-size: 1rem;
+    font-size: 0.92rem;
     font-weight: 700;
 }
 
 .config-row {
     display: flex;
     align-items: center;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
 }
 
 .config-row label {
-    flex: 0 0 160px;
+    flex: 0 0 145px;
     color: #bbb;
-    font-size: 0.9rem;
+    font-size: 0.84rem;
 }
 
 .config-row input,
@@ -392,23 +393,101 @@
 .context-options {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px 16px;
-    margin-bottom: 10px;
+    gap: 6px 12px;
+    margin-bottom: 8px;
 }
 
 .context-options label,
-.auto-judge-toggle {
+.auto-judge-toggle,
+.inline-option {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     color: #ccc;
-    font-size: 0.88rem;
+    font-size: 0.82rem;
 }
 
 .context-options input[type="number"] {
-    width: 72px;
-    padding: 5px 7px;
+    width: 58px;
+    padding: 4px 6px;
     flex: 0 0 auto;
+}
+
+.context-builder {
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+}
+
+.context-builder-title {
+    margin-bottom: 6px;
+    font-size: 0.86rem;
+}
+
+.tag-filter-presets {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    color: #aaa;
+    font-size: 0.8rem;
+}
+
+.tag-filter-chip {
+    padding: 4px 9px;
+    border: none;
+    border-radius: 6px;
+    background: #3a3a42;
+    color: #eee;
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+.tag-filter-chip:hover {
+    background: #4a4a54;
+}
+
+.danger-chip {
+    background: #6a3a42;
+}
+
+.plot-planner-debug-panel {
+    border: 1px solid #333;
+    border-radius: 8px;
+    background: #202028;
+    padding: 8px 10px;
+}
+
+.plot-planner-debug-panel summary {
+    color: #bfc7d8;
+    cursor: pointer;
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.plot-planner-debug-toolbar {
+    display: flex;
+    gap: 8px;
+    margin: 8px 0;
+}
+
+.plot-planner-debug-toolbar select {
+    flex: 1;
+}
+
+#plot-planner-debug-output {
+    max-height: 280px;
+    margin: 0;
+    padding: 10px;
+    overflow: auto;
+    border: 1px solid #333;
+    border-radius: 6px;
+    background: #121215;
+    color: #ddd;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 0.8rem;
+    line-height: 1.45;
 }
 
 .context-preview-panel {
