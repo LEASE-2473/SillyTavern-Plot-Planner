@@ -220,6 +220,11 @@
 .primary-btn:hover:not(:disabled) { background: #0077ee; }
 .warning-btn { background: #cc6600; }
 .warning-btn:hover:not(:disabled) { background: #ee7700; }
+.retry-breakdown-btn {
+    background: #6f42c1;
+    border: 1px solid #936fe0;
+}
+.retry-breakdown-btn:hover:not(:disabled) { background: #8254d6; }
 .success-btn { background: #008844; }
 .success-btn:hover:not(:disabled) { background: #00aa55; }
 
@@ -372,6 +377,7 @@
     display: flex;
     justify-content: flex-end;
     gap: 10px;
+    flex-wrap: wrap;
 }
 
 .context-builder {
@@ -560,6 +566,10 @@
     .plot-planner-header,
     .plot-planner-footer {
         padding: 12px;
+    }
+
+    .plot-planner-footer .plot-btn {
+        flex: 1 1 100%;
     }
 
     .plot-planner-body {

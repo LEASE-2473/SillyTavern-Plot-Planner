@@ -1,5 +1,48 @@
 # CODEX_CHANGELOG
 
+## 2026-06-28 - 增加手动重新拆解剧情并移除 JSON 修复请求
+
+### 用户目标
+
+在剧情大纲经用户确认后，如果 03 + 05 任务拆解请求因 API、空响应或格式错误而失败，允许通过独立按钮重新发送完整拆解请求；删除原 04 JSON 修复兜底，并重新排序提示词维护文件。
+
+### 主要修改内容
+
+- 新增“重新拆解剧情”按钮：首次拆解失败后保留当前剧情大纲、隐藏初次拆解按钮并显示重拆按钮。
+- 重拆会重新执行完整任务拆解 system/user prompt 与 JSON Schema 请求，不复用或修补上一次错误响应。
+- 删除 `BREAKDOWN_REPAIR_SYSTEM_PROMPT`、`repairTaskJson()` 及解析失败后的自动修复调用。
+- API 状态错误不再被误判为“不支持 JSON Schema”并自动改用文本模式重发。
+- 为重拆按钮增加独立配色、底部按钮换行和移动端全宽布局。
+- 插件版本由 `2.0.8` 更新为 `2.0.9`。
+- 提示词维护目录删除原 04，并将原 05/06 重编号为 04/05；README 同步更新为 `01/02 → 03/04 → 05`。
+
+### 修改的文件
+
+- `index.js`
+- `style.css`
+- `manifest.json`
+- `PROJECT_CONTEXT.md`
+- `CODEX_CHANGELOG.md`
+- `../PlotPlanner-提示词拆分/README.md`
+- `../PlotPlanner-提示词拆分/04-任务拆解用户提示词.md`
+- `../PlotPlanner-提示词拆分/05-主聊天任务注入提示词.md`
+- 删除 `../PlotPlanner-提示词拆分/04-任务JSON修复提示词.md`
+
+### 执行的验证命令及结果
+
+- `node --check .\plot-planner\index.js`：通过，无语法错误输出。
+- `node -e "JSON.parse(require('fs').readFileSync('.\\plot-planner\\manifest.json','utf8')); console.log('manifest ok')"`：通过，输出 `manifest ok`。
+- PowerShell 静态流程断言：通过，确认重拆按钮、事件绑定与完整重拆处理存在，修复常量/函数和旧 04 文件均已移除，提示词文件按 01 至 05 连续编号。
+
+### 未完成事项
+
+- 尚未在真实 SillyTavern UI 中端到端验证拆解失败后的按钮显示与重新请求。
+
+### 已知风险与后续建议
+
+- 如果模型持续返回无效 JSON，用户可能需要多次点击重拆；当前设计不会自动无限重试。
+- JSON Schema 不受支持时仍会回退到 JSON 文本模式，但明确的 HTTP/API 错误会直接交由手动重拆处理。
+
 ## 2026-06-28 - 缝合 Gemini 精修提示词并接受 UI 字号调整
 
 ### 用户目标

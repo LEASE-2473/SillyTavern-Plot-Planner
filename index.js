@@ -1,5 +1,5 @@
 // ========================================================================
-// 剧情规划器 (Plot Planner) v2.0.8
+// 剧情规划器 (Plot Planner) v2.0.9
 // SillyTavern 第三方扩展 - RPG任务流式剧情管理 (含破限与多配置)
 // ========================================================================
 (function () {
@@ -12,7 +12,7 @@
     }
     window.PlotPlannerLoaded = true;
 
-    console.log('🗺️ 剧情规划器 v2.0.8 启动');
+    console.log('🗺️ 剧情规划器 v2.0.9 启动');
 
     // ===== 内部状态 =====
     let isModalOpen = false;
@@ -64,13 +64,6 @@
 【输出格式要求】
 - 仅输出合法 JSON，不要 Markdown 代码块，不要解释说明。
 - 结构必须为：{"tasks":[{"title":"...","summary":"...","completionCriteria":"...，并提醒完成时只输出一次 <complete></complete>"}]}`;
-    const BREAKDOWN_REPAIR_SYSTEM_PROMPT = `你是 JSON 格式修复器。请把上一次任务拆解输出修复为合法 JSON。
-
-要求：
-1. 只输出 JSON，不要 Markdown、代码块、解释、前后缀。
-2. JSON 顶层必须是 {"tasks":[...]}。
-3. 每个任务必须包含 title、summary、completionCriteria 三个字符串字段。
-4. 不要改变原剧情含义，只修复结构、字段和缺失的完成条件。`;
     const PLOT_OUTLINE_FORMAT_PROMPT = `请严格使用以下固定格式输出剧情规划，方便后续拆解：
 
 【主线标题】
@@ -296,6 +289,7 @@
         </div>
         <div class="plot-planner-footer">
             <button id="plot-planner-breakdown" class="plot-btn warning-btn" disabled>敲定并拆解任务</button>
+            <button id="plot-planner-rebreakdown" class="plot-btn retry-breakdown-btn" type="button" style="display: none;">重新拆解剧情</button>
             <button id="plot-planner-start" class="plot-btn success-btn" style="display: none;">正式启动剧情</button>
         </div>
     </div>
@@ -331,6 +325,7 @@
             if (e.which == 13) handleChatSend();
         });
         $('#plot-planner-breakdown').on('click', handleBreakdown);
+        $('#plot-planner-rebreakdown').on('click', handleBreakdown);
         $('#plot-planner-start').on('click', handleStartExecution);
         $('#plot-context-preview').on('click', previewContext);
         $('#plot-planner-prev').on('click', () => moveTask(-1));
@@ -962,11 +957,12 @@
         $('#plot-context-count').val(settings.messageCount || 20);
 
         const hasDraft = Boolean(currentDraft);
-        $('#plot-planner-chat-input, #plot-planner-chat-send, #plot-planner-breakdown').prop('disabled', !hasDraft);
+        $('#plot-planner-chat-input, #plot-planner-chat-send, #plot-planner-breakdown, #plot-planner-rebreakdown').prop('disabled', !hasDraft);
         $('#plot-planner-execution-area').toggle(currentTasks.length > 0);
         $('#plot-planner-chat-section').toggle(currentTasks.length === 0);
         $('#plot-planner-start').toggle(currentTasks.length > 0 && activeTaskIndex < 0);
         $('#plot-planner-breakdown').toggle(currentTasks.length === 0);
+        $('#plot-planner-rebreakdown').hide();
         updatePauseButton();
         renderTasks();
         updatePromptInjection();
@@ -1168,35 +1164,11 @@
             return await callLLM(promptText, { ...options, jsonSchema });
         } catch (error) {
             const message = String(error?.message || error);
-            if (/取消|超时|正在进行|未配置|HTTP 40[13]/i.test(message)) throw error;
+            if (/取消|超时|正在进行|未配置|HTTP \d{3}|429|Too Many Requests|service_unavailable|服务不可用/i.test(message)) throw error;
             console.warn('[PlotPlanner] 当前模型不支持原生 JSON Schema，改用 JSON 文本模式。', error);
             const schemaText = JSON.stringify(jsonSchema.value);
             return callLLM(`${promptText}\n\n必须只输出 JSON，不要使用代码块。JSON Schema：\n${schemaText}`, options);
         }
-    }
-
-    async function repairTaskJson(rawResponse) {
-        const prompt = `请修复下面这段任务拆解输出，使它变成合法 JSON，并符合指定结构。
-
-【指定结构】
-{
-  "tasks": [
-    {
-      "title": "简短任务标题",
-      "summary": "当前剧情节点说明，包含目标、冲突/阻碍、可互动行动和边界。",
-      "completionCriteria": "最近一步可观察的小完成事实；完成时只输出一次 <complete></complete>。"
-    }
-  ]
-}
-
-【需要修复的输出】
-${String(rawResponse || '')}`;
-        return callStructuredLLM(prompt, TASK_SCHEMA, {
-            temperature: 0,
-            responseLength: 2048,
-            systemPrompt: BREAKDOWN_REPAIR_SYSTEM_PROMPT,
-            debugLabel: '任务 JSON 修复'
-        });
     }
 
     // ===== 阶段1: 生成草案 =====
@@ -1221,7 +1193,7 @@ ${String(rawResponse || '')}`;
             miniChatHistory = [{ role: 'ai', content: response }];
             $('#plot-planner-chat-history').empty();
             appendMiniChat('ai', response);
-            $('#plot-planner-chat-input, #plot-planner-chat-send, #plot-planner-breakdown').prop('disabled', false);
+            $('#plot-planner-chat-input, #plot-planner-chat-send, #plot-planner-breakdown, #plot-planner-rebreakdown').prop('disabled', false);
             savePlannerState();
         } catch (error) {
             showError('生成草案失败', error, handleGenerateDraft);
@@ -1276,6 +1248,7 @@ ${PLOT_OUTLINE_FORMAT_PROMPT}`;
     async function handleBreakdown() {
         try {
             setBusyButton('#plot-planner-breakdown', true, '拆解中...');
+            setBusyButton('#plot-planner-rebreakdown', true, '重新拆解中...');
             const nodeCount = Math.max(1, Math.min(10, Number($('#plot-planner-node-count').val()) || 3));
             const breakdownSystemPrompt = $('#plot-planner-breakdown-prompt').val().trim() || DEFAULT_BREAKDOWN_SYSTEM_PROMPT;
             const prompt = `请把下面“最终敲定的剧情规划”转换成可逐步发送给 SillyTavern 主聊天 AI 执行的任务 JSON。
@@ -1308,14 +1281,7 @@ ${currentDraft}`;
                 systemPrompt: breakdownSystemPrompt,
                 debugLabel: '任务节点拆分'
             });
-            let tasks;
-            try {
-                tasks = parseTaskBreakdownResponse(response);
-            } catch (parseError) {
-                console.warn('[PlotPlanner] 首次任务拆解 JSON 无效，尝试请求模型修复格式。', parseError);
-                const repairedResponse = await repairTaskJson(response);
-                tasks = parseTaskBreakdownResponse(repairedResponse);
-            }
+            const tasks = parseTaskBreakdownResponse(response);
             if (!Array.isArray(tasks) || tasks.length === 0) {
                 throw new Error('模型没有返回有效任务');
             }
@@ -1334,10 +1300,14 @@ ${currentDraft}`;
             $('#plot-planner-execution-area').slideDown();
             $('#plot-planner-start').show();
             $('#plot-planner-breakdown').hide();
+            $('#plot-planner-rebreakdown').hide();
         } catch (error) {
-            showError('拆解任务失败', error, handleBreakdown);
+            showError('拆解任务失败，请点击“重新拆解剧情”发起一次全新的任务拆解请求', error, null);
+            $('#plot-planner-breakdown').hide();
+            $('#plot-planner-rebreakdown').show();
         } finally {
             setBusyButton('#plot-planner-breakdown', false, '敲定并拆解任务');
+            setBusyButton('#plot-planner-rebreakdown', false, '重新拆解剧情');
         }
     }
 
@@ -1513,12 +1483,13 @@ ${currentTask.completionCriteria}
             $('<div>').addClass('chat-message system-msg').text('请在上方输入设定并点击"生成草案"，AI将为你构思带转折的剧情大纲。')
         );
         $('#plot-planner-chat-input').val('');
-        $('#plot-planner-chat-input, #plot-planner-chat-send, #plot-planner-breakdown').prop('disabled', true);
+        $('#plot-planner-chat-input, #plot-planner-chat-send, #plot-planner-breakdown, #plot-planner-rebreakdown').prop('disabled', true);
         $('#plot-planner-error').hide();
         $('#plot-planner-execution-area').slideUp();
         $('#plot-planner-chat-section').slideDown();
         $('#plot-planner-start').hide();
         $('#plot-planner-breakdown').show();
+        $('#plot-planner-rebreakdown').hide();
         updatePauseButton();
         renderTasks();
         updatePromptInjection();
