@@ -1,5 +1,41 @@
 # CODEX_CHANGELOG
 
+## 2026-06-29 - 修复代码围栏 JSON 被酒馆转换为空对象
+
+### 用户目标
+
+修复模型已经返回完整 `{"tasks":[...]}`，但因外层包含 ` ```json ` 围栏而被 SillyTavern 预解析为 `{}`，最终导致插件提示“模型没有返回 tasks 结构”的问题。
+
+### 主要修改内容
+
+- 为 `TASK_SCHEMA` 增加 `returnInvalid: true`。
+- 当 SillyTavern 无法直接解析带代码围栏的结构化响应时，保留并返回模型原文。
+- 复用插件现有 `parseJsonResponse()` 清理 Markdown 围栏并解析任务 JSON。
+- 插件版本由 `2.1.3` 更新为 `2.1.4`。
+
+### 修改的文件
+
+- `index.js`
+- `manifest.json`
+- `PROJECT_CONTEXT.md`
+- `CODEX_CHANGELOG.md`
+
+### 执行的验证命令及结果
+
+- `node --check .\plot-planner\index.js`：通过，无语法错误输出。
+- manifest 版本断言：通过，输出 `manifest 2.1.4 ok`。
+- 围栏 JSON 回归测试：通过，` ```json {"tasks":[...]} ``` ` 经插件实际解析函数得到完整任务数组，输出 `fenced task JSON ok`。
+- `git -C .\plot-planner diff --check`：通过，仅输出现有行尾转换提示。
+- 初次内联回归脚本因 PowerShell 反引号解析和函数截取表达式过窄而未执行到断言；改用字面量脚本后重新运行并通过。
+
+### 未完成事项
+
+- 尚未在真实 SillyTavern UI 中重新执行一次 25 节点拆解。
+
+### 已知风险与后续建议
+
+- 如果模型返回的不是 JSON，而是缺字段或语法损坏的文本，插件仍会拒绝该响应并显示重新拆解按钮。
+
 ## 2026-06-29 - 提高剧情拆解节点与输出额度
 
 ### 用户目标

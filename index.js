@@ -1,5 +1,5 @@
 // ========================================================================
-// 剧情规划器 (Plot Planner) v2.1.3
+// 剧情规划器 (Plot Planner) v2.1.4
 // SillyTavern 第三方扩展 - RPG任务流式剧情管理 (含破限与多配置)
 // ========================================================================
 (function () {
@@ -12,7 +12,7 @@
     }
     window.PlotPlannerLoaded = true;
 
-    console.log('🗺️ 剧情规划器 v2.1.3 启动');
+    console.log('🗺️ 剧情规划器 v2.1.4 启动');
 
     // ===== 内部状态 =====
     let isModalOpen = false;
@@ -99,6 +99,7 @@
         name: 'plot_planner_tasks',
         description: 'Ordered plot tasks',
         strict: true,
+        returnInvalid: true,
         value: {
             type: 'object',
             properties: {
