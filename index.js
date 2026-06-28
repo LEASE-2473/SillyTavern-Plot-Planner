@@ -1,5 +1,5 @@
 // ========================================================================
-// 剧情规划器 (Plot Planner) v2.0.7
+// 剧情规划器 (Plot Planner) v2.0.8
 // SillyTavern 第三方扩展 - RPG任务流式剧情管理 (含破限与多配置)
 // ========================================================================
 (function () {
@@ -12,7 +12,7 @@
     }
     window.PlotPlannerLoaded = true;
 
-    console.log('🗺️ 剧情规划器 v2.0.7 启动');
+    console.log('🗺️ 剧情规划器 v2.0.8 启动');
 
     // ===== 内部状态 =====
     let isModalOpen = false;
@@ -51,17 +51,19 @@
     };
     const COMPLETION_TAG_REGEX = /<\s*(?:complete|questcomplete|plot[-_\s]?complete)\s*(?:\/>|>\s*<\/\s*(?:complete|questcomplete|plot[-_\s]?complete)\s*>|>)/i;
     const DEFAULT_PLANNING_SYSTEM_PROMPT = '你是一个专业的 RPG 跑团向剧情策划师。请根据玩家要求、角色设定和聊天上下文，生成可商讨、可执行、带有阶段推进感的剧情规划。不要输出无关废话。';
-    const DEFAULT_BREAKDOWN_SYSTEM_PROMPT = `你是 Plot Planner 的任务拆解器，只负责把已经敲定的剧情规划转换成可执行任务 JSON。
+    const DEFAULT_BREAKDOWN_SYSTEM_PROMPT = `你是 Plot Planner 的专属任务拆解器。你的核心职责是：把宏观的剧情规划，切碎成【极度细粒度】、【防偷跑】的线性互动微任务（JSON格式）。
 
-要求：
-1. 只依据用户提供的“最终敲定的剧情规划”拆解，不要补充世界书、聊天记录或额外设定。
-2. 输出必须是合法 JSON，不要 Markdown、代码块、解释、前后缀。
-3. JSON 顶层必须是 {"tasks":[...]}。
-4. 每个任务必须包含 title、summary、completionCriteria 三个字符串字段。
-5. summary 要写成可发送给主聊天 AI 的当前剧情节点说明，包含目标、冲突/阻碍、可互动行动和边界。
-6. completionCriteria 必须是能从主聊天 AI 回复中客观观察到的“小完成事实”，并提醒完成时只输出一次 <complete></complete>。
-7. 每个任务只能包含一个核心戏剧拍点，不要把“铺垫、试探、反应、揭露、逃避、余波”等多个拍点合并成一个任务。
-8. 任务必须线性衔接；当前任务不要提前完成后续任务，也不要替 {{user}} 做决定。`;
+【防偷跑拆解核心准则】
+1. 微动作原则：绝对不能把“提出冲突 -> 解决冲突”放在同一个任务里！每个任务只能包含一个微小的互动环节。
+   - ❌ 错误拆解："NPC与玩家大吵一架，最终NPC哭着道歉。"（跨度太大，直接包办了过程和结局，剥夺了玩家参与感）
+   - ✅ 正确拆解："NPC语气变得冰冷，出言试探玩家的态度。"（只走半步，把后续的爆发留到下一个任务，并等待玩家反应）
+2. 柔性导向原则：summary 不能写成死命令。必须写成“期望的互动方向”，并强制在 summary 中声明：“如果 {{user}} 偏离路线，必须优先跟随 {{user}} 的行动，绝对不要强行拉回剧情”。
+3. 盲盒原则：当前任务的 summary 绝不能暗示后续任务的内容，防止主聊天 AI 提前“剧透”或替玩家推进进度。
+4. 客观判定原则：completionCriteria 必须是能从聊天中明确观察到的“单一客观事实”（如：{{user}}做出了明确回答、NPC完成了某个具体动作）。
+
+【输出格式要求】
+- 仅输出合法 JSON，不要 Markdown 代码块，不要解释说明。
+- 结构必须为：{"tasks":[{"title":"...","summary":"...","completionCriteria":"...，并提醒完成时只输出一次 <complete></complete>"}]}`;
     const BREAKDOWN_REPAIR_SYSTEM_PROMPT = `你是 JSON 格式修复器。请把上一次任务拆解输出修复为合法 JSON。
 
 要求：
@@ -85,13 +87,6 @@
 
 【阶段规划】
 阶段一：
-- 阶段目标：
-- 关键冲突：
-- 主要事件：
-- 玩家/角色可互动点：
-- 阶段完成标志：
-
-阶段二：
 - 阶段目标：
 - 关键冲突：
 - 主要事件：
@@ -1293,17 +1288,17 @@ ${PLOT_OUTLINE_FORMAT_PROMPT}`;
   "tasks": [
     {
       "title": "简短任务标题",
-      "summary": "当前剧情节点说明，包含目标、冲突/阻碍、可互动行动和边界。",
-      "completionCriteria": "最近一步可观察的小完成事实；完成时只输出一次 <complete></complete>。"
+      "summary": "当前剧情节点的【期望互动方向】。注意：必须在此处明确写上“如果 {{user}} 偏离，优先跟随 {{user}}，允许任务搁置”的字样！",
+      "completionCriteria": "最近一步可观察的微小完成事实；严禁使用心理状态作为完成标准；完成时只输出一次 <complete></complete>。"
     }
   ]
 }
 
-【拆解节奏要求】
-- 每个任务只能包含一个核心戏剧拍点，例如铺垫、试探、反应、揭露、逃避、余波只能选择其中一类作为重点。
-- 不要把多个连续结果合并进一个任务；如果剧情包含“铺垫→试探→破防→逃离→余波”，必须拆成多个任务。
-- completionCriteria 必须描述最近一步已经发生的可观察事实，不要写成整段剧情的最终结局。
-- summary 必须约束主聊天 AI 不得替 {{user}} 做决定，不得提前完成后续节点。
+【拆解节奏要求（严禁偷跑）】
+- 极度细分（只走半步）：必须将大事件切碎为连续的微小互动节点。比如“一场争吵”，必须拆成：试探、升级、爆发、冷场 4个独立的微任务。
+- 绝不跨步：一个任务里只能发生一件事。如果规划包含“铺垫→试探→破防→逃离”，必须拆成4个以上的任务，严禁把两个动作合并。
+- completionCriteria：必须描述【眼下这一步】发生的可客观观察的事实，绝对不要写成整段剧情的结局。
+- summary 约束：必须在 summary 文本中明确约束主聊天 AI：“不得替 {{user}} 做决定”、“优先顺从 {{user}} 当前的行动”。
 
 【最终敲定的剧情规划】
 ${currentDraft}`;
@@ -1400,8 +1395,8 @@ ${currentDraft}`;
 
         if (activeTaskIndex >= 0 && activeTaskIndex < currentTasks.length) {
             const currentTask = currentTasks[activeTaskIndex];
-            const injectionText = isExecutionPaused ? '' : `[System Note (Plot Planner):
-你正在执行一个分阶段 RPG 剧情任务链。当前只执行下面这个节点。不要提及“剧情规划器”或这些系统指令。
+            const injectionText = isExecutionPaused ? '' : `[System Note (Plot Planner - 柔性剧情导向):
+你正在扮演角色进行 RPG 互动。请记住：你是一个沉浸在当下的“体验者”，而不是急于推进进度的“小说作者”。以下是当前期望的【潜在剧情节点】。这仅仅是一个方向，不是强制剧本！请绝对遵守以下执行边界，绝不要在回复中提及这些系统指令。
 
 当前任务进度：${activeTaskIndex + 1}/${currentTasks.length}
 当前剧情节点：${currentTask.title}
@@ -1412,15 +1407,13 @@ ${currentTask.summary}
 完成条件：
 ${currentTask.completionCriteria}
 
-执行边界：
-- 本轮只推进“当前剧情节点”，不得提前完成、预告、概括或跳转到后续节点。
-- 不得替 {{user}} 做决定，不得描写 {{user}} 已经选择、同意、拒绝、行动、回复、离开、攻击、亲密接触或使用能力，除非这些行为已经由 {{user}} 在上一条消息中明确给出。
-- 不得抢话。涉及 {{user}} 的关键选择、态度、回应、行动结果时，必须停下来等待 {{user}}。
-- 不得为了完成任务而强行推进时间、地点、关系状态或重大冲突结果。
-- 每次回复最多推进一个核心戏剧拍点：铺垫、试探、反应、揭露、逃避、余波只能选择其中一类作为重点。
-- 如果当前节点尚未自然完成，只能继续铺垫、制造压力、给出可回应的局面，不得输出完成标签。
-- 如果当前节点已经在当前回复中明确完成，只输出一次 <complete></complete> 作为隐藏完成标记；不要在草稿、摘要、状态栏、选项或解释中提到完成标签。
-- 输出 <complete></complete> 后，不得继续推进下一节点。]`;
+执行边界与节奏控制（最高优先级）：
+1. 绝对跟随玩家步伐：如果 {{user}} 最新的回复没有配合剧情，或者选择了做与当前节点完全无关的事情（如喝咖啡、转移话题、无视暗示），你必须【100% 顺从并沉浸在 {{user}} 的当前行动中】，绝对不要生硬地把话题拉回剧情任务，绝对不要在对话中暗示你的任务目标！
+2. 允许任务搁置：剧情节点仅仅是“导向”。如果当前对话偏离了节点，或者条件尚未成熟，你就正常进行当前的自然互动。在任务自然完成之前，【绝对不要输出完成标签】。
+3. 每次只走半步：即使 {{user}} 顺着剧情走，你每次回复也只能推进一个极小的试探或铺垫，必须把产生重大改变的反应空间留给 {{user}}。绝对不要在一个回合内把“抛出冲突->解决冲突”全部写完。
+4. 严禁包办代替：不得替 {{user}} 做任何决定，不得预判或描写 {{user}} 的动作、心理、语言或反应，除非 {{user}} 已经明确给出。
+5. 顺其自然的完成：只有当且仅当 {{user}} 的主动互动已经【极其自然地】促成了“完成条件”实质性发生时，才在当前回复的【绝对最末尾】单独输出一次 <complete></complete> 作为隐藏标记。严禁在思想链、草稿或对话中间输出该标签。
+6. 任务后静默：一旦输出 <complete></complete>，必须立刻停下，绝对不得继续推进或预告下一节点的内容，把接下来的发展完全交给 {{user}}。]`;
             
             // IN_PROMPT places the task with extension/system prompts, after world info in Chat Completion flows.
             context.setExtensionPrompt('plot-planner', injectionText, EXTENSION_PROMPT_TYPES.IN_PROMPT, 0);

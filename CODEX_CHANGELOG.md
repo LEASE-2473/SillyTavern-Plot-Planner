@@ -1,5 +1,42 @@
 # CODEX_CHANGELOG
 
+## 2026-06-28 - 缝合 Gemini 精修提示词并接受 UI 字号调整
+
+### 用户目标
+
+将 Gemini 已精修的拆分提示词缝合回 `index.js`，接受用户已验证过的 `style.css` UI 字号修改，并将 `plot-planner` 插件项目推送到 GitHub；本轮只更新 `plot-planner/PROJECT_CONTEXT.md` 与 `plot-planner/CODEX_CHANGELOG.md`，不更新工作区根目录连续性文档。
+
+### 主要修改内容
+
+- 将插件版本从 `2.0.7` 更新到 `2.0.8`。
+- 将 Gemini 精修后的任务拆解 system prompt 缝合进 `DEFAULT_BREAKDOWN_SYSTEM_PROMPT`，强化微动作拆解、防偷跑、柔性导向、盲盒原则与客观完成条件。
+- 将动态任务拆解 user prompt 缝合进 `handleBreakdown()`，要求 summary 明确允许跟随 `{{user}}`、允许任务搁置，并要求 completionCriteria 避免心理状态、使用可观察微小事实。
+- 将主聊天任务注入 prompt 缝合进 `updatePromptInjection()`，强化“柔性剧情导向”、跟随玩家、允许偏离、每次只走半步、不得替玩家决定、完成标签只在最末尾输出以及输出后静默。
+- 按用户确认接受 `style.css` 中由 Gemini 修改并已验证的 UI 字号整理：在插件覆盖层设置统一基础字号，并让表单/按钮继承字号，减少局部重复字号声明。
+- 更新 `PROJECT_CONTEXT.md` 中当前版本与开发状态。
+
+### 修改的文件
+
+- `PROJECT_CONTEXT.md`
+- `CODEX_CHANGELOG.md`
+- `index.js`
+- `manifest.json`
+- `style.css`
+
+### 执行的验证命令及结果
+
+- `node --check .\plot-planner\index.js`：通过，无语法错误输出。
+- `node -e "JSON.parse(require('fs').readFileSync('.\\plot-planner\\manifest.json','utf8')); console.log('manifest ok')"`：通过，输出 `manifest ok`。
+
+### 未完成事项
+
+- 尚未在真实 SillyTavern UI 中端到端复测新版提示词对 Gemini 主聊天节奏的影响。
+
+### 已知风险与后续建议
+
+- 新提示词显著强化“跟随玩家”和“允许任务搁置”，实测时需观察是否会导致剧情推进过慢；如过慢，可在拆解 prompt 或注入 prompt 中适度增加“自然机会出现时轻推半步”的表达。
+- 任务完成仍依赖主聊天 AI 正确在末尾输出 `<complete></complete>`；如果 Gemini 偶尔忘记输出，仍需要用户手动完成或跳过任务。
+
 ## 2026-06-28 - 增加上下文标签过滤与调试面板
 
 ### 用户目标

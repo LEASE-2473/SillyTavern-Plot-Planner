@@ -24,6 +24,7 @@
     justify-content: center;
     font-family: 'Inter', sans-serif, 'Microsoft YaHei';
     color: var(--plot-text);
+    font-size: 0.84rem;
 }
 
 .plot-planner-overlay input,
@@ -31,6 +32,7 @@
 .plot-planner-overlay select,
 .plot-planner-overlay button {
     font-family: inherit;
+    font-size: inherit;
 }
 
 .plot-planner-overlay input:not([type="checkbox"]),
@@ -84,7 +86,7 @@
 
 .plot-planner-header h2 {
     margin: 0;
-    font-size: 1.2rem;
+    font-size: 1rem;
     color: #e0e0e0;
 }
 
@@ -157,7 +159,6 @@
 .plot-generation-title {
     margin-bottom: 8px;
     color: #f0f4ff;
-    font-size: 0.92rem;
     font-weight: 700;
 }
 
@@ -170,7 +171,6 @@
 .config-row label {
     flex: 0 0 145px;
     color: #bbb;
-    font-size: 0.84rem;
 }
 
 .config-row input,
@@ -249,7 +249,6 @@
     padding: 10px 14px;
     border-radius: 8px;
     max-width: 85%;
-    font-size: 0.95rem;
     line-height: 1.5;
     white-space: pre-wrap;
 }
@@ -258,7 +257,6 @@
     align-self: center;
     background: #222;
     color: #888;
-    font-size: 0.85rem;
 }
 
 .user-msg {
@@ -345,7 +343,6 @@
 .task-header {
     font-weight: bold;
     color: #88b2ff;
-    font-size: 0.9rem;
     display: flex;
     justify-content: space-between;
 }
@@ -353,7 +350,6 @@
 .task-content {
     color: var(--plot-text) !important;
     -webkit-text-fill-color: var(--plot-text) !important;
-    font-size: 0.9rem;
     width: 100%;
     min-height: 78px;
     background-color: var(--plot-input-bg) !important;
@@ -404,7 +400,6 @@
     align-items: center;
     gap: 6px;
     color: #ccc;
-    font-size: 0.82rem;
 }
 
 .context-options input[type="number"] {
@@ -420,7 +415,6 @@
 
 .context-builder-title {
     margin-bottom: 6px;
-    font-size: 0.86rem;
 }
 
 .tag-filter-presets {
@@ -430,7 +424,6 @@
     gap: 6px;
     margin-top: 6px;
     color: #aaa;
-    font-size: 0.8rem;
 }
 
 .tag-filter-chip {
@@ -440,7 +433,6 @@
     background: #3a3a42;
     color: #eee;
     cursor: pointer;
-    font-size: 0.8rem;
 }
 
 .tag-filter-chip:hover {
@@ -461,7 +453,6 @@
 .plot-planner-debug-panel summary {
     color: #bfc7d8;
     cursor: pointer;
-    font-size: 0.84rem;
     font-weight: 700;
 }
 
@@ -486,7 +477,6 @@
     color: #ddd;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    font-size: 0.8rem;
     line-height: 1.45;
 }
 
@@ -511,7 +501,6 @@
     border-top: 1px solid #333;
     color: #ddd;
     font-family: inherit;
-    font-size: 0.84rem;
     line-height: 1.45;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -536,7 +525,6 @@
 .task-field-label {
     margin-top: 4px;
     color: #999;
-    font-size: 0.78rem;
 }
 
 .task-criteria {
