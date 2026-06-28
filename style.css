@@ -133,6 +133,10 @@
     gap: 15px;
 }
 
+.plot-planner-details:not([open]) > .plot-planner-details-content {
+    display: none;
+}
+
 /* 滚动条美化 */
 .plot-planner-body::-webkit-scrollbar {
     width: 8px;
@@ -160,6 +164,13 @@
     margin-bottom: 8px;
     color: #f0f4ff;
     font-weight: 700;
+    font-size: 1.05rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.plot-planner-api-content {
+    padding-top: 10px;
 }
 
 .config-row {
@@ -597,14 +608,11 @@
     display: flex;
 }
 
-/* 取消原有的 details 样式影响 */
-.plot-planner-details, .plot-planner-debug-panel {
+/* 修复选项卡内容间距 */
+.plot-planner-debug-panel {
     border: none;
     padding: 0;
     background: transparent;
-}
-.plot-planner-details-content {
-    margin-top: 0;
 }
 
 @media (max-width: 700px) {
@@ -659,6 +667,8 @@
 
     .execution-toolbar .plot-btn {
         flex: 1 1 calc(50% - 8px);
+        padding: 6px 10px;
+        font-size: 0.85rem;
     }
 
     .auto-judge-toggle {

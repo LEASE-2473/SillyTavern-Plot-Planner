@@ -1,5 +1,45 @@
 # CODEX_CHANGELOG
 
+## 2026-06-29 - 审阅剧情生成折叠区与移动端按钮调整
+
+### 用户目标
+
+审阅 Gemini 在 Antigravity 中完成的 UI 修改，定位实际变化与潜在问题；确认可发布后更新项目连续性文档并发布到个人 GitHub 仓库。
+
+### 主要修改内容
+
+- 审阅 `index.js` 与 `style.css` 的工作区差异，确认本轮将剧情生成配置区改为原生可折叠区域，并在草案生成成功后自动收起。
+- 发现折叠内容的 `display: flex` 可能覆盖浏览器默认隐藏规则，补充明确的关闭态选择器，保证配置内容在 `<details>` 关闭时不可见。
+- 将新增的折叠标题和 API 页顶部间距内联样式移入 `style.css`，保持结构与表现分离。
+- 保留 Gemini 对移动端操作按钮内边距和字号的紧凑化调整。
+- 将插件版本由 `2.1.1` 更新为 `2.1.2`，同步 manifest、脚本头部、启动日志和项目状态。
+
+### 修改的文件
+
+- `index.js`
+- `style.css`
+- `manifest.json`
+- `PROJECT_CONTEXT.md`
+- `CODEX_CHANGELOG.md`
+
+### 执行的验证命令及结果
+
+- `node --check .\index.js`：通过，无语法错误输出。
+- manifest JSON 与版本断言：通过，输出 `manifest version ok: 2.1.2`。
+- CSS 大括号计数：通过，开闭均为 104。
+- 运行时版本标记一致性检查：通过，`index.js` 中仅存在 `2.1.2`。
+- `git diff --check`：通过，无空白错误；仅有 Git 的 LF/CRLF 工作区转换提示。
+- GitHub 插件远端核对：通过，确认 `main` 当前基线提交为 `a9be81c`（`Bump version to 2.1.1`）。
+- 发布方式遵循用户要求，不使用 `gh` 指令；通过本地 Git 提交/推送并使用 GitHub 插件核验远端结果。
+
+### 未完成事项
+
+- 尚未在真实 SillyTavern UI 中验证折叠动画、键盘操作和移动端按钮尺寸。
+
+### 已知风险与后续建议
+
+- 原生 `<details>` 和 `<summary>` 的标记样式可能随浏览器及 SillyTavern 主题略有差异，建议后续在实际主题下完成视觉回归。
+
 ## 2026-06-28 - 修正 UI 发布版本显示
 
 ### 用户目标

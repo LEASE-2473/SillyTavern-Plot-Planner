@@ -1,5 +1,5 @@
 // ========================================================================
-// 剧情规划器 (Plot Planner) v2.1.1
+// 剧情规划器 (Plot Planner) v2.1.2
 // SillyTavern 第三方扩展 - RPG任务流式剧情管理 (含破限与多配置)
 // ========================================================================
 (function () {
@@ -12,7 +12,7 @@
     }
     window.PlotPlannerLoaded = true;
 
-    console.log('🗺️ 剧情规划器 v2.1.1 启动');
+    console.log('🗺️ 剧情规划器 v2.1.2 启动');
 
     // ===== 内部状态 =====
     let isModalOpen = false;
@@ -144,9 +144,10 @@
             </div>
 
             <div id="plot-planner-tab-planning" class="plot-planner-tab-content active" role="tabpanel" aria-labelledby="plot-planner-tab-button-planning">
-                <div class="plot-planner-config plot-generation-panel" id="plot-planner-config-section">
-                    <div class="plot-generation-title">剧情生成</div>
-                    <div class="context-builder">
+                <details class="plot-planner-config plot-generation-panel plot-planner-details" id="plot-planner-config-section" open>
+                    <summary class="plot-generation-title">剧情生成</summary>
+                    <div class="plot-planner-details-content">
+                        <div class="context-builder">
                         <div class="context-builder-title">剧情上下文</div>
                         <div class="context-options">
                             <label><input type="checkbox" id="plot-context-chat" checked> 最近聊天</label>
@@ -169,8 +170,9 @@
                         <label for="plot-planner-node-count">期待任务节点数量:</label>
                         <input type="number" id="plot-planner-node-count" value="3" min="1" max="10">
                     </div>
-                    <button id="plot-planner-generate-draft" class="plot-btn primary-btn" style="margin-top: 10px; width: 100%;">生成草案</button>
-                </div>
+                        <button id="plot-planner-generate-draft" class="plot-btn primary-btn" style="margin-top: 10px; width: 100%;">生成草案</button>
+                    </div>
+                </details>
                 <div class="plot-planner-chat-area" id="plot-planner-chat-section">
                     <div id="plot-planner-chat-history" class="chat-history">
                         <div class="chat-message system-msg">请在上方输入设定并点击"生成草案"，AI将为你构思带转折的剧情大纲。</div>
@@ -182,8 +184,8 @@
                 </div>
             </div>
 
-            <div class="plot-planner-tab-content plot-planner-details" id="plot-planner-tab-api" role="tabpanel" aria-labelledby="plot-planner-tab-button-api" hidden>
-                <div class="plot-planner-details-content">
+            <div class="plot-planner-tab-content" id="plot-planner-tab-api" role="tabpanel" aria-labelledby="plot-planner-tab-button-api" hidden>
+                <div class="plot-planner-api-content">
                     <!-- 多配置管理 -->
                     <div class="plot-planner-api-config" style="margin-bottom: 10px; padding: 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px;">
                         <div class="config-row">
@@ -1321,6 +1323,7 @@
             $('#plot-planner-chat-history').empty();
             appendMiniChat('ai', response);
             $('#plot-planner-chat-input, #plot-planner-chat-send, #plot-planner-breakdown, #plot-planner-rebreakdown').prop('disabled', false);
+            $('#plot-planner-config-section').removeAttr('open');
             savePlannerState();
         } catch (error) {
             showError('生成草案失败', error, handleGenerateDraft);
