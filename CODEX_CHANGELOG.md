@@ -1,5 +1,43 @@
 # CODEX_CHANGELOG
 
+## 2026-06-28 - 维护选项卡 UI 规范与无障碍交互
+
+### 用户目标
+
+维护 Gemini 优化后的 `index.js` 与 `style.css`，修正 UI 规范问题，同时保留新的四选项卡布局和现有业务流程。
+
+### 主要修改内容
+
+- 为弹窗补充对话框语义、标题关联、Escape 关闭、焦点约束和关闭后的焦点恢复。
+- 将关闭控件改为原生按钮，并让顶部入口支持 Enter/Space 键。
+- 为四个选项卡补充标准 ARIA 关系、隐藏状态同步以及方向键、Home/End 键切换。
+- 关联主要表单标签与输入控件，为动态任务文本框生成稳定 ID，并补充必要的无障碍名称。
+- 增加统一的 `:focus-visible` 焦点环，恢复被移除的原生焦点轮廓能力。
+- 调整字体回退顺序，删除重复的上下文样式和选项卡改版后失效的 `summary` 样式。
+
+### 修改的文件
+
+- `index.js`
+- `style.css`
+- `PROJECT_CONTEXT.md`
+- `CODEX_CHANGELOG.md`
+
+### 执行的验证命令及结果
+
+- `node --check .\index.js`：通过，无语法错误输出。
+- `node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8')); console.log('manifest ok')"`：通过，输出 `manifest ok`。
+- ARIA 静态引用检查：通过，所有 `aria-controls` 与 `aria-labelledby` 均能解析到现有 ID。
+- CSS 大括号计数检查：通过，开闭数量一致。
+- `git diff --check`：通过，无空白错误；仅有 Git 的 LF/CRLF 工作区转换提示。
+
+### 未完成事项
+
+- 尚未在真实 SillyTavern UI 中使用鼠标、键盘和移动端尺寸完成端到端视觉回归。
+
+### 已知风险与后续建议
+
+- 插件 UI 仍保留部分历史内联样式和固定深色配色；后续若要完整适配所有 SillyTavern 主题，可继续抽取为 CSS 变量与语义化类。
+
 ## 2026-06-28 - 自动补全独立 API 生成端点
 
 ### 用户目标

@@ -16,6 +16,7 @@
 
     // ===== 内部状态 =====
     let isModalOpen = false;
+    let modalReturnFocus = null;
     let currentTasks = [];
     let activeTaskIndex = -1;
     let miniChatHistory = [];
@@ -128,48 +129,65 @@
 
         // 注入 Modal HTML
         const modalHtml = `
-<div id="plot-planner-modal" class="plot-planner-overlay" style="display: none;">
-    <div class="plot-planner-container">
+<div id="plot-planner-modal" class="plot-planner-overlay" role="dialog" aria-modal="true" aria-labelledby="plot-planner-title" aria-hidden="true" style="display: none;">
+    <div class="plot-planner-container" tabindex="-1">
         <div class="plot-planner-header">
-            <h2>🗺️ 剧情规划器 (Plot Planner)</h2>
-            <div id="plot-planner-close" class="plot-planner-close-btn">&times;</div>
+            <h2 id="plot-planner-title">🗺️ 剧情规划器 (Plot Planner)</h2>
+            <button id="plot-planner-close" class="plot-planner-close-btn" type="button" aria-label="关闭剧情规划器">&times;</button>
         </div>
         <div class="plot-planner-body">
-            <div class="plot-planner-config plot-generation-panel" id="plot-planner-config-section">
-                <div class="plot-generation-title">剧情生成</div>
-                <div class="context-builder">
-                    <div class="context-builder-title">剧情上下文</div>
-                    <div class="context-options">
-                        <label><input type="checkbox" id="plot-context-chat" checked> 最近聊天</label>
-                        <label><input type="checkbox" id="plot-context-character" checked> 角色信息</label>
-                        <label><input type="checkbox" id="plot-context-note" checked> 作者注释</label>
-                        <label><input type="checkbox" id="plot-context-world" checked> 激活世界书</label>
-                        <label>消息数 <input type="number" id="plot-context-count" value="20" min="1" max="200"></label>
-                    </div>
-                    <button id="plot-context-preview" class="plot-btn" type="button">预览本次上下文</button>
-                    <details id="plot-context-preview-panel" class="context-preview-panel">
-                        <summary id="plot-context-summary">尚未收集上下文</summary>
-                        <pre id="plot-context-preview-text"></pre>
-                    </details>
-                </div>
-                <div class="config-row">
-                    <label>剧情方向/结局 (选填):</label>
-                    <input type="text" id="plot-planner-direction" placeholder="例如：加入一点悬疑元素，结局是两人和好...">
-                </div>
-                <div class="config-row">
-                    <label>期待任务节点数量:</label>
-                    <input type="number" id="plot-planner-node-count" value="3" min="1" max="10">
-                </div>
-                <button id="plot-planner-generate-draft" class="plot-btn primary-btn" style="margin-top: 10px; width: 100%;">生成草案</button>
+            <div class="plot-planner-tabs" role="tablist" aria-label="剧情规划器功能">
+                <button id="plot-planner-tab-button-planning" class="plot-planner-tab-btn active" data-tab="plot-planner-tab-planning" type="button" role="tab" aria-selected="true" aria-controls="plot-planner-tab-planning" tabindex="0">剧情规划</button>
+                <button id="plot-planner-tab-button-api" class="plot-planner-tab-btn" data-tab="plot-planner-tab-api" type="button" role="tab" aria-selected="false" aria-controls="plot-planner-tab-api" tabindex="-1">API设置</button>
+                <button id="plot-planner-tab-button-debug" class="plot-planner-tab-btn" data-tab="plot-planner-tab-debug" type="button" role="tab" aria-selected="false" aria-controls="plot-planner-tab-debug" tabindex="-1">调试面板</button>
+                <button id="plot-planner-tab-button-execution" class="plot-planner-tab-btn" data-tab="plot-planner-tab-execution" type="button" role="tab" aria-selected="false" aria-controls="plot-planner-tab-execution" tabindex="-1">任务链</button>
             </div>
-            <details class="plot-planner-details" id="plot-planner-settings-details">
-                <summary>⚙️ API / 提示词高级设置 (点击展开/折叠)</summary>
+
+            <div id="plot-planner-tab-planning" class="plot-planner-tab-content active" role="tabpanel" aria-labelledby="plot-planner-tab-button-planning">
+                <div class="plot-planner-config plot-generation-panel" id="plot-planner-config-section">
+                    <div class="plot-generation-title">剧情生成</div>
+                    <div class="context-builder">
+                        <div class="context-builder-title">剧情上下文</div>
+                        <div class="context-options">
+                            <label><input type="checkbox" id="plot-context-chat" checked> 最近聊天</label>
+                            <label><input type="checkbox" id="plot-context-character" checked> 角色信息</label>
+                            <label><input type="checkbox" id="plot-context-note" checked> 作者注释</label>
+                            <label><input type="checkbox" id="plot-context-world" checked> 激活世界书</label>
+                            <label>消息数 <input type="number" id="plot-context-count" value="20" min="1" max="200"></label>
+                        </div>
+                        <button id="plot-context-preview" class="plot-btn" type="button">预览本次上下文</button>
+                        <details id="plot-context-preview-panel" class="context-preview-panel">
+                            <summary id="plot-context-summary">尚未收集上下文</summary>
+                            <pre id="plot-context-preview-text"></pre>
+                        </details>
+                    </div>
+                    <div class="config-row">
+                        <label for="plot-planner-direction">剧情方向/结局 (选填):</label>
+                        <input type="text" id="plot-planner-direction" placeholder="例如：加入一点悬疑元素，结局是两人和好...">
+                    </div>
+                    <div class="config-row">
+                        <label for="plot-planner-node-count">期待任务节点数量:</label>
+                        <input type="number" id="plot-planner-node-count" value="3" min="1" max="10">
+                    </div>
+                    <button id="plot-planner-generate-draft" class="plot-btn primary-btn" style="margin-top: 10px; width: 100%;">生成草案</button>
+                </div>
+                <div class="plot-planner-chat-area" id="plot-planner-chat-section">
+                    <div id="plot-planner-chat-history" class="chat-history">
+                        <div class="chat-message system-msg">请在上方输入设定并点击"生成草案"，AI将为你构思带转折的剧情大纲。</div>
+                    </div>
+                    <div class="chat-input-row">
+                        <input type="text" id="plot-planner-chat-input" aria-label="剧情大纲修改意见" placeholder="输入修改意见 (如：把转折改得更温和一点)..." disabled>
+                        <button id="plot-planner-chat-send" class="plot-btn" disabled>发送</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="plot-planner-tab-content plot-planner-details" id="plot-planner-tab-api" role="tabpanel" aria-labelledby="plot-planner-tab-button-api" hidden>
                 <div class="plot-planner-details-content">
-                    
                     <!-- 多配置管理 -->
                     <div class="plot-planner-api-config" style="margin-bottom: 10px; padding: 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px;">
                         <div class="config-row">
-                            <label>配置档案 (Profile):</label>
+                            <label for="plot-planner-profile-select">配置档案 (Profile):</label>
                             <select id="plot-planner-profile-select" style="flex:1;">
                                 <option value="default">默认配置 (Default)</option>
                             </select>
@@ -182,7 +200,7 @@
                     <!-- API 设置 -->
                     <div class="plot-planner-api-config" style="margin-bottom: 10px; padding: 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px;">
                         <div class="config-row">
-                            <label>API 模式:</label>
+                            <label for="plot-planner-api-mode">API 模式:</label>
                             <select id="plot-planner-api-mode">
                                 <option value="st">酒馆当前模型 (SillyTavern API)</option>
                                 <option value="custom">独立 OpenAI 兼容 API</option>
@@ -190,16 +208,16 @@
                         </div>
                         <div id="plot-planner-custom-api-settings" style="display: none; margin-top: 10px;">
                             <div class="config-row">
-                                <label>API URL:</label>
+                                <label for="plot-planner-api-url">API URL:</label>
                                 <input type="text" id="plot-planner-api-url" placeholder="https://api.openai.com/v1">
                             </div>
                             <div class="config-row">
-                                <label>API Key (安全):</label>
+                                <label for="plot-planner-api-key">API Key (安全):</label>
                                 <input type="password" id="plot-planner-api-key" placeholder="将会在本地加密混淆存储">
                             </div>
                             <div class="config-row">
-                                <label>模型 (Model):</label>
-                                <select id="plot-planner-api-model-select" style="flex:1; display:none;"></select>
+                                <label for="plot-planner-api-model">模型 (Model):</label>
+                                <select id="plot-planner-api-model-select" aria-label="从接口返回列表选择模型" style="flex:1; display:none;"></select>
                                 <input type="text" id="plot-planner-api-model" placeholder="gpt-3.5-turbo" style="flex:1;">
                                 <button id="plot-planner-api-test" class="plot-btn" style="margin-left: 5px;">拉取模型测试</button>
                             </div>
@@ -210,7 +228,7 @@
                     <!-- 上下文过滤设置 -->
                     <div class="plot-planner-config" style="margin-bottom: 10px;">
                         <div class="config-row" style="align-items: flex-start; margin-top: 5px;">
-                            <label>聊天标签过滤:</label>
+                            <label for="plot-context-filter-tags-list">聊天标签过滤:</label>
                             <div style="flex:1;">
                                 <label class="inline-option"><input type="checkbox" id="plot-context-filter-tags" checked> 生成剧情上下文时过滤黑名单标签块</label>
                                 <input type="text" id="plot-context-filter-tags-list" style="width: 100%; margin-top: 6px;" placeholder="draft_notes, details, think, !--">
@@ -231,7 +249,7 @@
                     <!-- 提示词预设 -->
                     <div class="plot-planner-config" style="margin-bottom: 10px;">
                         <div class="config-row">
-                            <label>剧情规划模板:</label>
+                            <label for="plot-planner-prompt-template">剧情规划模板:</label>
                             <select id="plot-planner-prompt-template" style="flex:1;">
                                 <option value="custom">-- 自定义 --</option>
                             </select>
@@ -239,37 +257,29 @@
                             <button id="plot-planner-prompt-del" class="plot-btn warning-btn" style="margin-left: 5px; display:none;">🗑️</button>
                         </div>
                         <div class="config-row" style="align-items: flex-start; margin-top: 5px;">
-                            <label>剧情内容提示词:</label>
+                            <label for="plot-planner-system-prompt">剧情内容提示词:</label>
                             <textarea id="plot-planner-system-prompt" style="flex:1; height: 80px; background: #121215; border: 1px solid #333; color: #fff; padding: 8px; border-radius: 4px; resize: vertical;" placeholder="用于生成和商讨剧情大纲，可自定义并保存。"></textarea>
                         </div>
                         <div class="config-row" style="align-items: flex-start; margin-top: 5px;">
-                            <label>子任务拆解提示词:</label>
+                            <label for="plot-planner-breakdown-prompt">子任务拆解提示词:</label>
                             <textarea id="plot-planner-breakdown-prompt" style="flex:1; height: 110px; background: #121215; border: 1px solid #333; color: #fff; padding: 8px; border-radius: 4px; resize: vertical;" placeholder="专门用于把最终剧情大纲转换成 JSON 子任务。拆解请求只会发送此提示词和最终大纲。"></textarea>
                         </div>
                         <div style="font-size: 0.8rem; color: #888; margin-top: 5px;">说明：剧情规划提示词会结合上下文生成固定格式大纲；子任务拆解提示词只处理最终大纲，不会再次发送世界书/聊天等长上下文。</div>
                     </div>
 
                 </div>
-            </details>
-            <details class="plot-planner-debug-panel" id="plot-planner-debug-panel">
-                <summary>🐞 调试：查看发送给 AI / 注入主聊天的提示词</summary>
+            </div>
+
+            <div class="plot-planner-tab-content plot-planner-debug-panel" id="plot-planner-tab-debug" role="tabpanel" aria-labelledby="plot-planner-tab-button-debug" hidden>
                 <div class="plot-planner-debug-toolbar">
-                    <select id="plot-planner-debug-select"></select>
+                    <select id="plot-planner-debug-select" aria-label="调试记录"></select>
                     <button id="plot-planner-debug-refresh" class="plot-btn" type="button">刷新</button>
                     <button id="plot-planner-debug-clear" class="plot-btn warning-btn" type="button">清空记录</button>
                 </div>
                 <pre id="plot-planner-debug-output">暂无调试记录。</pre>
-            </details>
-            <div class="plot-planner-chat-area" id="plot-planner-chat-section">
-                <div id="plot-planner-chat-history" class="chat-history">
-                    <div class="chat-message system-msg">请在上方输入设定并点击"生成草案"，AI将为你构思带转折的剧情大纲。</div>
-                </div>
-                <div class="chat-input-row">
-                    <input type="text" id="plot-planner-chat-input" placeholder="输入修改意见 (如：把转折改得更温和一点)..." disabled>
-                    <button id="plot-planner-chat-send" class="plot-btn" disabled>发送</button>
-                </div>
             </div>
-            <div id="plot-planner-execution-area" class="execution-area" style="display: none;">
+
+            <div id="plot-planner-tab-execution" class="plot-planner-tab-content execution-area" role="tabpanel" aria-labelledby="plot-planner-tab-button-execution" hidden>
                 <h3>当前剧情任务链</h3>
                 <div class="execution-toolbar">
                     <button id="plot-planner-prev" class="plot-btn" type="button">上一步</button>
@@ -281,7 +291,8 @@
                 </div>
                 <div id="plot-planner-tasks-list" class="tasks-list"></div>
             </div>
-            <div id="plot-planner-error" class="plot-planner-error" style="display: none;">
+
+            <div id="plot-planner-error" class="plot-planner-error" role="alert" aria-live="assertive" style="display: none;">
                 <span id="plot-planner-error-text"></span>
                 <button id="plot-planner-retry" class="plot-btn" type="button">重试</button>
                 <button id="plot-planner-cancel-request" class="plot-btn danger-btn" type="button">取消请求</button>
@@ -304,6 +315,8 @@
             id: 'plot-planner-top-btn',
             class: 'drawer-icon fa-solid fa-map fa-fw interactable closedIcon',
             title: '剧情规划器 (Plot Planner)',
+            role: 'button',
+            'aria-label': '打开剧情规划器',
             tabindex: '0'
         });
         $toggle.append($icon);
@@ -317,8 +330,20 @@
         }
 
         // ===== 绑定基础事件 =====
+        $('.plot-planner-tab-btn').on('click', function() {
+            switchTab($(this).data('tab'));
+        });
+        $('.plot-planner-tab-btn').on('keydown', handleTabKeydown);
+
         $icon.on('click', toggleModal);
-        $('#plot-planner-close').on('click', toggleModal);
+        $icon.on('keydown', function (event) {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                toggleModal();
+            }
+        });
+        $('#plot-planner-close').on('click', closeModal);
+        $('#plot-planner-modal').on('keydown', handleModalKeydown);
         $('#plot-planner-generate-draft').on('click', handleGenerateDraft);
         $('#plot-planner-chat-send').on('click', handleChatSend);
         $('#plot-planner-chat-input').on('keypress', function (e) {
@@ -678,13 +703,94 @@
     }
 
     // ===== UI 与杂项 =====
-    function toggleModal() {
-        isModalOpen = !isModalOpen;
-        if (isModalOpen) {
-            $('#plot-planner-modal').fadeIn(200);
-        } else {
-            $('#plot-planner-modal').fadeOut(200);
+
+    function switchTab(tabId) {
+        const $tabs = $('.plot-planner-tab-btn');
+        const $activeTab = $tabs.filter(`[data-tab="${tabId}"]`);
+        if (!$activeTab.length || !$(`#${tabId}`).length) return;
+
+        $tabs.removeClass('active').attr({ 'aria-selected': 'false', tabindex: '-1' });
+        $activeTab.addClass('active').attr({ 'aria-selected': 'true', tabindex: '0' });
+
+        $('.plot-planner-tab-content').removeClass('active').attr('hidden', true);
+        $(`#${tabId}`).addClass('active').removeAttr('hidden');
+    }
+
+    function handleTabKeydown(event) {
+        const tabs = $('.plot-planner-tab-btn').toArray();
+        const currentIndex = tabs.indexOf(event.currentTarget);
+        let nextIndex = currentIndex;
+
+        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % tabs.length;
+        else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+        else if (event.key === 'Home') nextIndex = 0;
+        else if (event.key === 'End') nextIndex = tabs.length - 1;
+        else return;
+
+        event.preventDefault();
+        const nextTab = tabs[nextIndex];
+        switchTab($(nextTab).data('tab'));
+        nextTab.focus();
+    }
+
+    function getModalFocusableElements() {
+        return $('#plot-planner-modal')
+            .find('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), details > summary, [tabindex]:not([tabindex="-1"])')
+            .filter(':visible')
+            .toArray();
+    }
+
+    function handleModalKeydown(event) {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeModal();
+            return;
         }
+        if (event.key !== 'Tab') return;
+
+        const focusable = getModalFocusableElements();
+        if (!focusable.length) {
+            event.preventDefault();
+            $('.plot-planner-container').trigger('focus');
+            return;
+        }
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+        }
+    }
+
+    function openModal() {
+        if (isModalOpen) return;
+        modalReturnFocus = document.activeElement;
+        isModalOpen = true;
+        $('#plot-planner-modal')
+            .attr('aria-hidden', 'false')
+            .stop(true, true)
+            .fadeIn(200, () => $('.plot-planner-tab-btn.active').trigger('focus'));
+    }
+
+    function closeModal() {
+        if (!isModalOpen) return;
+        isModalOpen = false;
+        $('#plot-planner-modal')
+            .attr('aria-hidden', 'true')
+            .stop(true, true)
+            .fadeOut(200, () => {
+                if (modalReturnFocus && document.contains(modalReturnFocus)) modalReturnFocus.focus();
+                modalReturnFocus = null;
+            });
+    }
+
+    function toggleModal() {
+        if (isModalOpen) closeModal();
+        else openModal();
     }
 
     function appendMiniChat(role, text) {
@@ -958,8 +1064,7 @@
 
         const hasDraft = Boolean(currentDraft);
         $('#plot-planner-chat-input, #plot-planner-chat-send, #plot-planner-breakdown, #plot-planner-rebreakdown').prop('disabled', !hasDraft);
-        $('#plot-planner-execution-area').toggle(currentTasks.length > 0);
-        $('#plot-planner-chat-section').toggle(currentTasks.length === 0);
+
         $('#plot-planner-start').toggle(currentTasks.length > 0 && activeTaskIndex < 0);
         $('#plot-planner-breakdown').toggle(currentTasks.length === 0);
         $('#plot-planner-rebreakdown').hide();
@@ -1317,9 +1422,7 @@ ${currentDraft}`;
             renderTasks();
             savePlannerState();
 
-            $('#plot-planner-settings-details').removeAttr('open');
-            $('#plot-planner-chat-section').slideUp();
-            $('#plot-planner-execution-area').slideDown();
+            switchTab('plot-planner-tab-execution');
             $('#plot-planner-start').show();
             $('#plot-planner-breakdown').hide();
             $('#plot-planner-rebreakdown').hide();
@@ -1350,20 +1453,22 @@ ${currentDraft}`;
             if (task.status === 'skipped') headerDiv.append($('<span>').text('(已跳过)'));
             
             const summary = $('<textarea>')
+                .attr('id', `plot-planner-task-summary-${index}`)
                 .addClass('task-content')
                 .attr('aria-label', `任务 ${index + 1} 内容`)
                 .data({ index, field: 'summary' })
                 .val(task.summary || '');
             const criteria = $('<textarea>')
+                .attr('id', `plot-planner-task-criteria-${index}`)
                 .addClass('task-content task-criteria')
                 .attr('aria-label', `任务 ${index + 1} 完成条件`)
                 .data({ index, field: 'completionCriteria' })
                 .val(task.completionCriteria || '');
             
             itemDiv.append(headerDiv)
-                .append($('<label>').addClass('task-field-label').text('剧情内容'))
+                .append($('<label>').attr('for', `plot-planner-task-summary-${index}`).addClass('task-field-label').text('剧情内容'))
                 .append(summary)
-                .append($('<label>').addClass('task-field-label').text('完成条件'))
+                .append($('<label>').attr('for', `plot-planner-task-criteria-${index}`).addClass('task-field-label').text('完成条件'))
                 .append(criteria);
             list.append(itemDiv);
         });
@@ -1429,6 +1534,7 @@ ${currentTask.completionCriteria}
         currentTasks[0].status = 'active';
         isExecutionPaused = false;
         renderTasks();
+        switchTab('plot-planner-tab-execution');
         toggleModal();
         updatePromptInjection();
         savePlannerState();
@@ -1507,8 +1613,7 @@ ${currentTask.completionCriteria}
         $('#plot-planner-chat-input').val('');
         $('#plot-planner-chat-input, #plot-planner-chat-send, #plot-planner-breakdown, #plot-planner-rebreakdown').prop('disabled', true);
         $('#plot-planner-error').hide();
-        $('#plot-planner-execution-area').slideUp();
-        $('#plot-planner-chat-section').slideDown();
+        switchTab('plot-planner-tab-planning');
         $('#plot-planner-start').hide();
         $('#plot-planner-breakdown').show();
         $('#plot-planner-rebreakdown').hide();

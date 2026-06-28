@@ -22,7 +22,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-family: 'Inter', sans-serif, 'Microsoft YaHei';
+    font-family: 'Inter', 'Microsoft YaHei', sans-serif;
     color: var(--plot-text);
     font-size: 0.84rem;
 }
@@ -91,6 +91,12 @@
 }
 
 .plot-planner-close-btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
     font-size: 1.5rem;
     color: #888;
     cursor: pointer;
@@ -116,14 +122,6 @@
     border: 1px solid #333;
     border-radius: 8px;
     padding: 10px 15px;
-}
-
-.plot-planner-details summary {
-    cursor: pointer;
-    font-weight: bold;
-    color: #e0e0e0;
-    outline: none;
-    user-select: none;
 }
 
 .plot-planner-details-content {
@@ -184,7 +182,6 @@
     color: #fff;
     padding: 8px 12px;
     border-radius: 4px;
-    outline: none;
     transition: border-color 0.2s;
 }
 
@@ -215,6 +212,11 @@
 }
 .plot-btn:hover:not(:disabled) { background: #555; }
 .plot-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.plot-planner-overlay :is(button, input, textarea, select, summary):focus-visible {
+    outline: 2px solid var(--plot-accent);
+    outline-offset: 2px;
+}
 
 .primary-btn { background: #0066cc; }
 .primary-btn:hover:not(:disabled) { background: #0077ee; }
@@ -414,15 +416,6 @@
     flex: 0 0 auto;
 }
 
-.context-builder {
-    margin-bottom: 10px;
-    padding-bottom: 10px;
-}
-
-.context-builder-title {
-    margin-bottom: 6px;
-}
-
 .tag-filter-presets {
     display: flex;
     flex-wrap: wrap;
@@ -454,12 +447,6 @@
     border-radius: 8px;
     background: #202028;
     padding: 8px 10px;
-}
-
-.plot-planner-debug-panel summary {
-    color: #bfc7d8;
-    cursor: pointer;
-    font-weight: 700;
 }
 
 .plot-planner-debug-toolbar {
@@ -610,4 +597,68 @@
         align-items: stretch;
         flex-direction: column;
     }
+}
+
+/* =========================================
+   选项卡 (Tabs) 样式
+   ========================================= */
+.plot-planner-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 5px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #333;
+    flex-shrink: 0;
+}
+
+.plot-planner-tab-btn {
+    padding: 8px 16px;
+    background: #25252b;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #b8b8c2;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.2s;
+    flex: 1 1 auto;
+    text-align: center;
+}
+
+.plot-planner-tab-btn:hover {
+    background: #3a3a42;
+    color: #fff;
+}
+
+.plot-planner-tab-btn.active {
+    background: #444;
+    border-color: #66b2ff;
+    color: #fff;
+}
+
+.plot-planner-tab-btn:focus-visible {
+    position: relative;
+    z-index: 1;
+}
+
+.plot-planner-tab-content {
+    display: none;
+    flex-direction: column;
+    gap: 15px;
+    flex: 1;
+    min-height: 0;
+}
+
+.plot-planner-tab-content.active {
+    display: flex;
+}
+
+/* 取消原有的 details 样式影响 */
+.plot-planner-details, .plot-planner-debug-panel {
+    border: none;
+    padding: 0;
+    background: transparent;
+}
+.plot-planner-details-content {
+    margin-top: 0;
 }
