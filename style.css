@@ -395,10 +395,17 @@
     flex-wrap: wrap;
 }
 
+.plot-planner-section-title {
+    font-weight: bold;
+    font-size: 1.05rem;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px dashed #3a3a42;
+    color: #f0f4ff;
+}
+
 .context-builder {
-    margin-bottom: 14px;
-    padding-bottom: 14px;
-    border-bottom: 1px solid #3a3a42;
+    margin-top: 5px;
 }
 
 .context-filter-row {

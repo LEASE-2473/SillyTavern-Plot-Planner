@@ -1,5 +1,5 @@
 // ========================================================================
-// 剧情规划器 (Plot Planner) v2.1.5
+// 剧情规划器 (Plot Planner) v2.1.6
 // SillyTavern 第三方扩展 - RPG任务流式剧情管理 (含破限与多配置)
 // ========================================================================
 (function () {
@@ -12,7 +12,7 @@
     }
     window.PlotPlannerLoaded = true;
 
-    console.log('🗺️ 剧情规划器 v2.1.5 启动');
+    console.log('🗺️ 剧情规划器 v2.1.6 启动');
 
     // ===== 内部状态 =====
     let isModalOpen = false;
@@ -145,7 +145,7 @@
         <div class="plot-planner-body">
             <div class="plot-planner-tabs" role="tablist" aria-label="剧情规划器功能">
                 <button id="plot-planner-tab-button-planning" class="plot-planner-tab-btn active" data-tab="plot-planner-tab-planning" type="button" role="tab" aria-selected="true" aria-controls="plot-planner-tab-planning" tabindex="0">剧情规划</button>
-                <button id="plot-planner-tab-button-api" class="plot-planner-tab-btn" data-tab="plot-planner-tab-api" type="button" role="tab" aria-selected="false" aria-controls="plot-planner-tab-api" tabindex="-1">API设置</button>
+                <button id="plot-planner-tab-button-api" class="plot-planner-tab-btn" data-tab="plot-planner-tab-api" type="button" role="tab" aria-selected="false" aria-controls="plot-planner-tab-api" tabindex="-1">设置</button>
                 <button id="plot-planner-tab-button-debug" class="plot-planner-tab-btn" data-tab="plot-planner-tab-debug" type="button" role="tab" aria-selected="false" aria-controls="plot-planner-tab-debug" tabindex="-1">调试面板</button>
                 <button id="plot-planner-tab-button-execution" class="plot-planner-tab-btn" data-tab="plot-planner-tab-execution" type="button" role="tab" aria-selected="false" aria-controls="plot-planner-tab-execution" tabindex="-1">任务链</button>
             </div>
@@ -154,46 +154,14 @@
                 <details class="plot-planner-config plot-generation-panel plot-planner-details" id="plot-planner-config-section" open>
                     <summary class="plot-generation-title">剧情生成</summary>
                     <div class="plot-planner-details-content">
-                        <div class="context-builder">
-                        <div class="context-builder-title">剧情上下文</div>
-                        <div class="context-options">
-                            <label><input type="checkbox" id="plot-context-chat" checked> 最近聊天</label>
-                            <label><input type="checkbox" id="plot-context-character" checked> 角色信息</label>
-                            <label><input type="checkbox" id="plot-context-note" checked> 作者注释</label>
-                            <label><input type="checkbox" id="plot-context-world" checked> 激活世界书</label>
-                            <label>消息数 <input type="number" id="plot-context-count" value="20" min="1" max="200"></label>
+                        <div class="config-row">
+                            <label for="plot-planner-direction">剧情方向/结局 (选填):</label>
+                            <input type="text" id="plot-planner-direction" placeholder="例如：加入一点悬疑元素，结局是两人和好...">
                         </div>
-                        <div class="config-row context-filter-row">
-                            <label for="plot-context-filter-tags-list">聊天标签过滤:</label>
-                            <div class="context-filter-fields">
-                                <label class="inline-option"><input type="checkbox" id="plot-context-filter-tags" checked> 过滤黑名单标签块</label>
-                                <input type="text" id="plot-context-filter-tags-list" placeholder="draft_notes, details, think, !--">
-                                <div class="tag-filter-presets">
-                                    <span>常用：</span>
-                                    <button class="tag-filter-chip" type="button" data-tag="draft_notes">draft_notes</button>
-                                    <button class="tag-filter-chip" type="button" data-tag="details">details</button>
-                                    <button class="tag-filter-chip" type="button" data-tag="think">think</button>
-                                    <button class="tag-filter-chip" type="button" data-tag="thinking">thinking</button>
-                                    <button class="tag-filter-chip" type="button" data-tag="!--">!--</button>
-                                    <button id="plot-context-filter-tags-reset" class="tag-filter-chip danger-chip" type="button">重置</button>
-                                </div>
-                                <div class="plot-planner-help">只过滤发送给剧情规划 AI 的上下文副本，不修改聊天正文。</div>
-                            </div>
+                        <div class="config-row">
+                            <label for="plot-planner-node-count">期待任务节点数量:</label>
+                            <input type="number" id="plot-planner-node-count" value="5" min="5" max="50">
                         </div>
-                        <button id="plot-context-preview" class="plot-btn" type="button">预览本次上下文</button>
-                        <details id="plot-context-preview-panel" class="context-preview-panel">
-                            <summary id="plot-context-summary">尚未收集上下文</summary>
-                            <pre id="plot-context-preview-text"></pre>
-                        </details>
-                    </div>
-                    <div class="config-row">
-                        <label for="plot-planner-direction">剧情方向/结局 (选填):</label>
-                        <input type="text" id="plot-planner-direction" placeholder="例如：加入一点悬疑元素，结局是两人和好...">
-                    </div>
-                    <div class="config-row">
-                        <label for="plot-planner-node-count">期待任务节点数量:</label>
-                        <input type="number" id="plot-planner-node-count" value="5" min="5" max="50">
-                    </div>
                         <div class="planning-actions">
                             <button id="plot-planner-generate-draft" class="plot-btn primary-btn">生成草案</button>
                             <button id="plot-planner-clear-draft" class="plot-btn danger-btn" type="button">清空草案</button>
@@ -213,8 +181,9 @@
 
             <div class="plot-planner-tab-content" id="plot-planner-tab-api" role="tabpanel" aria-labelledby="plot-planner-tab-button-api" hidden>
                 <div class="plot-planner-api-content">
-                    <!-- 多配置管理 -->
-                    <div class="plot-planner-api-config" style="margin-bottom: 10px; padding: 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px;">
+                    <!-- 多配置管理及 API -->
+                    <div class="plot-planner-config" style="margin-bottom: 10px; padding: 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px;">
+                        <div class="plot-planner-section-title">API 基础配置</div>
                         <div class="config-row">
                             <label for="plot-planner-profile-select">配置档案 (Profile):</label>
                             <select id="plot-planner-profile-select" style="flex:1;">
@@ -224,11 +193,7 @@
                             <button id="plot-planner-profile-new" class="plot-btn success-btn" style="margin-left: 5px;" title="新建档案">➕ 新建</button>
                             <button id="plot-planner-profile-del" class="plot-btn warning-btn" style="margin-left: 5px;" title="删除档案">🗑️</button>
                         </div>
-                    </div>
-
-                    <!-- API 设置 -->
-                    <div class="plot-planner-api-config" style="margin-bottom: 10px; padding: 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px;">
-                        <div class="config-row">
+                        <div class="config-row" style="margin-top: 10px;">
                             <label for="plot-planner-api-mode">API 模式:</label>
                             <select id="plot-planner-api-mode">
                                 <option value="st">酒馆当前模型 (SillyTavern API)</option>
@@ -255,7 +220,8 @@
                     </div>
 
                     <!-- 提示词预设 -->
-                    <div class="plot-planner-config" style="margin-bottom: 10px;">
+                    <div class="plot-planner-config" style="margin-bottom: 10px; padding: 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px;">
+                        <div class="plot-planner-section-title">剧情规划模板</div>
                         <div class="config-row">
                             <label for="plot-planner-prompt-template">剧情规划模板:</label>
                             <select id="plot-planner-prompt-template" style="flex:1;">
@@ -273,6 +239,42 @@
                             <textarea id="plot-planner-breakdown-prompt" style="flex:1; height: 110px; background: #121215; border: 1px solid #333; color: #fff; padding: 8px; border-radius: 4px; resize: vertical;" placeholder="专门用于把最终剧情大纲转换成 JSON 子任务。拆解请求只会发送此提示词和最终大纲。"></textarea>
                         </div>
                         <div style="font-size: 0.8rem; color: #888; margin-top: 5px;">说明：剧情规划提示词会结合上下文生成固定格式大纲；子任务拆解提示词只处理最终大纲，不会再次发送世界书/聊天等长上下文。</div>
+                    </div>
+
+                    <!-- 剧情上下文设置 -->
+                    <div class="plot-planner-config" style="margin-bottom: 10px; padding: 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px;">
+                        <div class="plot-planner-section-title">剧情上下文设置</div>
+                        <div class="context-builder">
+                            <div class="context-options">
+                                <label><input type="checkbox" id="plot-context-chat" checked> 最近聊天</label>
+                                <label><input type="checkbox" id="plot-context-character" checked> 角色信息</label>
+                                <label><input type="checkbox" id="plot-context-note" checked> 作者注释</label>
+                                <label><input type="checkbox" id="plot-context-world" checked> 激活世界书</label>
+                                <label>消息数 <input type="number" id="plot-context-count" value="20" min="1" max="200"></label>
+                            </div>
+                            <div class="config-row context-filter-row">
+                                <label for="plot-context-filter-tags-list">聊天标签过滤:</label>
+                                <div class="context-filter-fields">
+                                    <label class="inline-option"><input type="checkbox" id="plot-context-filter-tags" checked> 过滤黑名单标签块</label>
+                                    <input type="text" id="plot-context-filter-tags-list" placeholder="draft_notes, details, think, !--">
+                                    <div class="tag-filter-presets">
+                                        <span>常用：</span>
+                                        <button class="tag-filter-chip" type="button" data-tag="draft_notes">draft_notes</button>
+                                        <button class="tag-filter-chip" type="button" data-tag="details">details</button>
+                                        <button class="tag-filter-chip" type="button" data-tag="think">think</button>
+                                        <button class="tag-filter-chip" type="button" data-tag="thinking">thinking</button>
+                                        <button class="tag-filter-chip" type="button" data-tag="!--">!--</button>
+                                        <button id="plot-context-filter-tags-reset" class="tag-filter-chip danger-chip" type="button">重置</button>
+                                    </div>
+                                    <div class="plot-planner-help">只过滤发送给剧情规划 AI 的上下文副本，不修改聊天正文。</div>
+                                </div>
+                            </div>
+                            <button id="plot-context-preview" class="plot-btn" type="button" style="margin-top: 10px;">预览本次上下文</button>
+                            <details id="plot-context-preview-panel" class="context-preview-panel">
+                                <summary id="plot-context-summary">尚未收集上下文</summary>
+                                <pre id="plot-context-preview-text"></pre>
+                            </details>
+                        </div>
                     </div>
 
                 </div>

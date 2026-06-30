@@ -1,5 +1,44 @@
 # CODEX_CHANGELOG
 
+## 2026-06-30 - 审阅设置页 UI 信息架构调整
+
+### 用户目标
+
+审阅 Gemini 最新完成但尚未记录 changelog 的 UI 修改，核对项目文件与既有状态，并补齐连续性文档。
+
+### 主要修改内容
+
+- 审阅剧情规划页精简、`API设置` 更名为“设置”、API/Profile 合并分区、提示词模板分区和剧情上下文设置迁移。
+- 确认上下文、提示词与 API 控件保留原有 DOM ID，现有事件绑定、状态读取和请求流程不因跨选项卡搬迁而中断。
+- 发现新增 `.section-title` 为全局通用选择器，可能污染 SillyTavern 或其他扩展 UI；改为 `.plot-planner-section-title`。
+- 修正剧情方向与节点数表单搬迁后产生的 HTML 缩进，保持模板层级清晰。
+- 将插件版本由 `2.1.5` 更新为 `2.1.6`，同步 manifest、脚本头部、启动日志和项目状态。
+
+### 修改的文件
+
+- `index.js`
+- `style.css`
+- `manifest.json`
+- `PROJECT_CONTEXT.md`
+- `CODEX_CHANGELOG.md`
+
+### 执行的验证命令及结果
+
+- `node --check .\index.js`：通过，无语法错误输出。
+- manifest JSON 与版本断言：通过，输出 `manifest 2.1.6 ok`。
+- Modal DOM 静态断言：通过，确认 68 个静态 ID 唯一、ARIA 引用均可解析，且没有残留未加前缀的 `section-title` 类。
+- CSS 静态断言：通过，开闭大括号均为 112，且没有残留全局 `.section-title` 选择器。
+- `git diff --check`：最终通过，仅有工作区既有的 LF/CRLF 转换提示。
+- 首次 DOM 断言因 Windows 下标准输入脚本参数位置取错而未执行成功，同时 `git diff --check` 发现一处 Gemini 留下的尾随空格；修正脚本参数并清理空格后重新运行，全部通过。
+
+### 未完成事项
+
+- 尚未在真实 SillyTavern 桌面端和手机端验证设置页滚动、Profile 操作及上下文预览。
+
+### 已知风险与后续建议
+
+- 设置页内容明显变长；小屏设备虽然可在选项卡内容区滚动，仍建议实机确认软键盘弹出时文本框和底部内容的可达性。
+
 ## 2026-06-30 - 解耦 API、剧情草案与任务链状态
 
 ### 用户目标
