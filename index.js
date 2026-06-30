@@ -1,5 +1,5 @@
 // ========================================================================
-// 剧情规划器 (Plot Planner) v2.1.4
+// 剧情规划器 (Plot Planner) v2.1.5
 // SillyTavern 第三方扩展 - RPG任务流式剧情管理 (含破限与多配置)
 // ========================================================================
 (function () {
@@ -12,7 +12,7 @@
     }
     window.PlotPlannerLoaded = true;
 
-    console.log('🗺️ 剧情规划器 v2.1.4 启动');
+    console.log('🗺️ 剧情规划器 v2.1.5 启动');
 
     // ===== 内部状态 =====
     let isModalOpen = false;
@@ -33,7 +33,9 @@
     let builtInPrompts = [];
     let customPrompts = [];
 
-    const STATE_KEY = 'plot_planner_state';
+    const LEGACY_STATE_KEY = 'plot_planner_state';
+    const PLANNING_STATE_KEY = 'plot_planner_planning_state';
+    const TASK_STATE_KEY = 'plot_planner_task_state';
     const REQUEST_TIMEOUT_MS = 90000;
     const DEBUG_LOG_LIMIT = 30;
     const MIN_TASK_NODE_COUNT = 5;
@@ -161,6 +163,23 @@
                             <label><input type="checkbox" id="plot-context-world" checked> 激活世界书</label>
                             <label>消息数 <input type="number" id="plot-context-count" value="20" min="1" max="200"></label>
                         </div>
+                        <div class="config-row context-filter-row">
+                            <label for="plot-context-filter-tags-list">聊天标签过滤:</label>
+                            <div class="context-filter-fields">
+                                <label class="inline-option"><input type="checkbox" id="plot-context-filter-tags" checked> 过滤黑名单标签块</label>
+                                <input type="text" id="plot-context-filter-tags-list" placeholder="draft_notes, details, think, !--">
+                                <div class="tag-filter-presets">
+                                    <span>常用：</span>
+                                    <button class="tag-filter-chip" type="button" data-tag="draft_notes">draft_notes</button>
+                                    <button class="tag-filter-chip" type="button" data-tag="details">details</button>
+                                    <button class="tag-filter-chip" type="button" data-tag="think">think</button>
+                                    <button class="tag-filter-chip" type="button" data-tag="thinking">thinking</button>
+                                    <button class="tag-filter-chip" type="button" data-tag="!--">!--</button>
+                                    <button id="plot-context-filter-tags-reset" class="tag-filter-chip danger-chip" type="button">重置</button>
+                                </div>
+                                <div class="plot-planner-help">只过滤发送给剧情规划 AI 的上下文副本，不修改聊天正文。</div>
+                            </div>
+                        </div>
                         <button id="plot-context-preview" class="plot-btn" type="button">预览本次上下文</button>
                         <details id="plot-context-preview-panel" class="context-preview-panel">
                             <summary id="plot-context-summary">尚未收集上下文</summary>
@@ -175,7 +194,10 @@
                         <label for="plot-planner-node-count">期待任务节点数量:</label>
                         <input type="number" id="plot-planner-node-count" value="5" min="5" max="50">
                     </div>
-                        <button id="plot-planner-generate-draft" class="plot-btn primary-btn" style="margin-top: 10px; width: 100%;">生成草案</button>
+                        <div class="planning-actions">
+                            <button id="plot-planner-generate-draft" class="plot-btn primary-btn">生成草案</button>
+                            <button id="plot-planner-clear-draft" class="plot-btn danger-btn" type="button">清空草案</button>
+                        </div>
                     </div>
                 </details>
                 <div class="plot-planner-chat-area" id="plot-planner-chat-section">
@@ -232,27 +254,6 @@
                         </div>
                     </div>
 
-                    <!-- 上下文过滤设置 -->
-                    <div class="plot-planner-config" style="margin-bottom: 10px;">
-                        <div class="config-row" style="align-items: flex-start; margin-top: 5px;">
-                            <label for="plot-context-filter-tags-list">聊天标签过滤:</label>
-                            <div style="flex:1;">
-                                <label class="inline-option"><input type="checkbox" id="plot-context-filter-tags" checked> 生成剧情上下文时过滤黑名单标签块</label>
-                                <input type="text" id="plot-context-filter-tags-list" style="width: 100%; margin-top: 6px;" placeholder="draft_notes, details, think, !--">
-                                <div class="tag-filter-presets">
-                                    <span>常用：</span>
-                                    <button class="tag-filter-chip" type="button" data-tag="draft_notes">draft_notes</button>
-                                    <button class="tag-filter-chip" type="button" data-tag="details">details</button>
-                                    <button class="tag-filter-chip" type="button" data-tag="think">think</button>
-                                    <button class="tag-filter-chip" type="button" data-tag="thinking">thinking</button>
-                                    <button class="tag-filter-chip" type="button" data-tag="!--">!--</button>
-                                    <button id="plot-context-filter-tags-reset" class="tag-filter-chip danger-chip" type="button">重置</button>
-                                </div>
-                                <div style="font-size: 0.8rem; color: #888; margin-top: 5px;">说明：填标签名即可，自动匹配成 &lt;标签&gt;...&lt;/标签&gt;；!-- 会匹配 HTML 注释。只过滤发送给剧情规划 AI 的上下文副本，不修改聊天正文，不限制剩余正文长度。</div>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- 提示词预设 -->
                     <div class="plot-planner-config" style="margin-bottom: 10px;">
                         <div class="config-row">
@@ -294,7 +295,9 @@
                     <button id="plot-planner-skip" class="plot-btn warning-btn" type="button">跳过</button>
                     <button id="plot-planner-pause" class="plot-btn" type="button">暂停</button>
                     <button id="plot-planner-stop" class="plot-btn danger-btn" type="button">停止规划</button>
-                    <button id="plot-planner-clear" class="plot-btn danger-btn" type="button">清空剧情</button>
+                    <button id="plot-planner-regenerate-tasks" class="plot-btn retry-breakdown-btn" type="button">API 重新生成任务链</button>
+                    <button id="plot-planner-clear-tasks" class="plot-btn danger-btn" type="button">清空任务链</button>
+                    <button id="plot-planner-clear-all" class="plot-btn danger-btn" type="button">全部清空</button>
                 </div>
                 <div id="plot-planner-tasks-list" class="tasks-list"></div>
             </div>
@@ -356,8 +359,8 @@
         $('#plot-planner-chat-input').on('keypress', function (e) {
             if (e.which == 13) handleChatSend();
         });
-        $('#plot-planner-breakdown').on('click', handleBreakdown);
-        $('#plot-planner-rebreakdown').on('click', handleBreakdown);
+        $('#plot-planner-breakdown').on('click', () => handleBreakdown());
+        $('#plot-planner-rebreakdown').on('click', () => handleBreakdown());
         $('#plot-planner-start').on('click', handleStartExecution);
         $('#plot-context-preview').on('click', previewContext);
         $('#plot-planner-prev').on('click', () => moveTask(-1));
@@ -365,7 +368,10 @@
         $('#plot-planner-skip').on('click', () => completeCurrentTask('skipped'));
         $('#plot-planner-pause').on('click', toggleExecutionPause);
         $('#plot-planner-stop').on('click', stopExecution);
-        $('#plot-planner-clear').on('click', clearPlanner);
+        $('#plot-planner-regenerate-tasks').on('click', handleRegenerateTaskChain);
+        $('#plot-planner-clear-draft').on('click', clearPlanningState);
+        $('#plot-planner-clear-tasks').on('click', clearTaskState);
+        $('#plot-planner-clear-all').on('click', clearAllPlannerState);
         $('#plot-planner-retry').on('click', retryLastAction);
         $('#plot-planner-cancel-request').on('click', cancelActiveRequest);
         $('#plot-planner-debug-refresh').on('click', renderDebugPanel);
@@ -376,10 +382,11 @@
         });
         $('#plot-context-filter-tags-reset').on('click', function () {
             $('#plot-context-filter-tags-list').val(DEFAULT_CONTEXT_FILTER_TAGS);
-            savePlannerState();
+            savePlanningState();
         });
         $('#plot-context-chat, #plot-context-character, #plot-context-note, #plot-context-world, #plot-context-filter-tags, #plot-context-filter-tags-list, #plot-context-count')
-            .on('change', savePlannerState);
+            .on('change', savePlanningState);
+        $('#plot-planner-direction, #plot-planner-node-count').on('change', savePlanningState);
         
         // 模式切换显示
         $('#plot-planner-api-mode').on('change', function() {
@@ -397,6 +404,9 @@
         $('#plot-planner-profile-select').on('change', loadSelectedProfile);
         
         $('#plot-planner-api-test').on('click', testApiAndFetchModels);
+        $('#plot-planner-api-model-select').on('change', function () {
+            $('#plot-planner-api-model').val($(this).val() || '');
+        });
         
         $('#plot-planner-prompt-save').on('click', saveCustomPrompt);
         $('#plot-planner-prompt-del').on('click', deleteCustomPrompt);
@@ -584,6 +594,10 @@
         $sel.val(currentProfileId);
     }
 
+    function getCurrentApiModel() {
+        return String($('#plot-planner-api-model').val() || '').trim();
+    }
+
     function saveCurrentProfile() {
         let p = apiProfiles.find(x => x.id === currentProfileId);
         if (!p) return;
@@ -592,7 +606,7 @@
         p.url = $('#plot-planner-api-url').val();
         // 混淆加密存储 Key
         p.key = obfuscate($('#plot-planner-api-key').val());
-        p.model = $('#plot-planner-api-model').is(':visible') ? $('#plot-planner-api-model').val() : $('#plot-planner-api-model-select').val();
+        p.model = getCurrentApiModel();
         p.promptId = $('#plot-planner-prompt-template').val();
         p.systemPrompt = $('#plot-planner-system-prompt').val();
         p.breakdownPrompt = $('#plot-planner-breakdown-prompt').val();
@@ -694,7 +708,11 @@
                 data.data.forEach(m => {
                     $sel.append($('<option>', {value: m.id, text: m.id}));
                 });
-                
+
+                const currentModel = getCurrentApiModel();
+                const hasCurrentModel = data.data.some(model => model.id === currentModel);
+                $sel.val(hasCurrentModel ? currentModel : data.data[0]?.id || '');
+                $('#plot-planner-api-model').val($sel.val() || currentModel);
                 $('#plot-planner-api-model').hide();
                 $sel.show();
                 if (typeof toastr !== 'undefined') toastr.success(`连接成功！拉取到 ${data.data.length} 个模型。`);
@@ -823,7 +841,7 @@
         if (!tags.some(item => item.toLowerCase() === tag.toLowerCase())) {
             tags.push(tag);
             $('#plot-context-filter-tags-list').val(tags.join(', '));
-            savePlannerState();
+            savePlanningState();
         }
     }
 
@@ -1021,44 +1039,89 @@
         output.text(parts.join('\n\n'));
     }
 
-    function snapshotPlannerState() {
+    function snapshotPlanningState() {
         return {
-            version: 2,
+            version: 1,
             draft: currentDraft,
             history: miniChatHistory,
-            tasks: currentTasks,
-            activeTaskIndex,
-            paused: isExecutionPaused,
             direction: $('#plot-planner-direction').val() || '',
             nodeCount: normalizeTaskNodeCount($('#plot-planner-node-count').val()),
             contextSettings: getContextSettings()
         };
     }
 
-    function savePlannerState() {
+    function snapshotTaskState() {
+        return {
+            version: 1,
+            tasks: currentTasks,
+            activeTaskIndex,
+            paused: isExecutionPaused
+        };
+    }
+
+    function saveStateSlice(key, state) {
         const context = SillyTavern.getContext();
         if (!context?.chatMetadata) return;
-        context.chatMetadata[STATE_KEY] = snapshotPlannerState();
+        context.chatMetadata[key] = state;
         context.saveMetadataDebounced?.();
+    }
+
+    function savePlanningState() {
+        saveStateSlice(PLANNING_STATE_KEY, snapshotPlanningState());
+    }
+
+    function saveTaskState() {
+        saveStateSlice(TASK_STATE_KEY, snapshotTaskState());
+    }
+
+    function migrateLegacyState(context) {
+        const metadata = context?.chatMetadata;
+        const legacyState = metadata?.[LEGACY_STATE_KEY];
+        if (!legacyState) return;
+
+        if (!metadata[PLANNING_STATE_KEY]) {
+            metadata[PLANNING_STATE_KEY] = {
+                version: 1,
+                draft: legacyState.draft || '',
+                history: Array.isArray(legacyState.history) ? legacyState.history : [],
+                direction: legacyState.direction || '',
+                nodeCount: normalizeTaskNodeCount(legacyState.nodeCount),
+                contextSettings: legacyState.contextSettings || {}
+            };
+        }
+        if (!metadata[TASK_STATE_KEY]) {
+            metadata[TASK_STATE_KEY] = {
+                version: 1,
+                tasks: Array.isArray(legacyState.tasks) ? legacyState.tasks : [],
+                activeTaskIndex: Number.isInteger(legacyState.activeTaskIndex) ? legacyState.activeTaskIndex : -1,
+                paused: Boolean(legacyState.paused)
+            };
+        }
+
+        delete metadata[LEGACY_STATE_KEY];
+        context.saveMetadataDebounced?.();
+        console.info('[PlotPlanner] 已将旧版聊天状态拆分为草案状态与任务链状态');
     }
 
     function loadPlannerState() {
         const context = SillyTavern.getContext();
-        const state = context?.chatMetadata?.[STATE_KEY];
-        currentDraft = state?.draft || '';
-        miniChatHistory = Array.isArray(state?.history) ? state.history : [];
-        currentTasks = Array.isArray(state?.tasks) ? state.tasks.map(normalizeTask) : [];
-        activeTaskIndex = Number.isInteger(state?.activeTaskIndex) ? state.activeTaskIndex : -1;
-        isExecutionPaused = Boolean(state?.paused);
+        migrateLegacyState(context);
+        const planningState = context?.chatMetadata?.[PLANNING_STATE_KEY];
+        const taskState = context?.chatMetadata?.[TASK_STATE_KEY];
+        currentDraft = planningState?.draft || '';
+        miniChatHistory = Array.isArray(planningState?.history) ? planningState.history : [];
+        currentTasks = Array.isArray(taskState?.tasks) ? taskState.tasks.map(normalizeTask) : [];
+        activeTaskIndex = Number.isInteger(taskState?.activeTaskIndex) ? taskState.activeTaskIndex : -1;
+        isExecutionPaused = Boolean(taskState?.paused);
 
         $('#plot-planner-chat-history').empty().append(
             $('<div>').addClass('chat-message system-msg').text('生成草案后，可以继续提出修改意见。')
         );
         miniChatHistory.forEach(message => appendMiniChat(message.role, message.content));
-        $('#plot-planner-direction').val(state?.direction || '');
-        $('#plot-planner-node-count').val(normalizeTaskNodeCount(state?.nodeCount));
+        $('#plot-planner-direction').val(planningState?.direction || '');
+        $('#plot-planner-node-count').val(normalizeTaskNodeCount(planningState?.nodeCount));
 
-        const settings = state?.contextSettings || {};
+        const settings = planningState?.contextSettings || {};
         $('#plot-context-chat').prop('checked', settings.includeChat !== false);
         $('#plot-context-character').prop('checked', settings.includeCharacter !== false);
         $('#plot-context-note').prop('checked', settings.includeNote !== false);
@@ -1073,8 +1136,11 @@
         $('#plot-planner-chat-input, #plot-planner-chat-send, #plot-planner-breakdown, #plot-planner-rebreakdown').prop('disabled', !hasDraft);
 
         $('#plot-planner-start').toggle(currentTasks.length > 0 && activeTaskIndex < 0);
-        $('#plot-planner-breakdown').toggle(currentTasks.length === 0);
+        $('#plot-planner-breakdown').toggle(hasDraft && currentTasks.length === 0);
         $('#plot-planner-rebreakdown').hide();
+        $('#plot-planner-regenerate-tasks').prop('disabled', !hasDraft);
+        $('#plot-planner-clear-draft').prop('disabled', !hasDraft && miniChatHistory.length === 0);
+        $('#plot-planner-clear-tasks').prop('disabled', currentTasks.length === 0);
         updatePauseButton();
         renderTasks();
         updatePromptInjection();
@@ -1209,9 +1275,7 @@
     async function callCustomApi(promptText, systemPrompt, options, signal) {
         const url = resolveChatCompletionsUrl($('#plot-planner-api-url').val());
         const key = $('#plot-planner-api-key').val().trim();
-        const model = $('#plot-planner-api-model').is(':visible')
-            ? $('#plot-planner-api-model').val().trim()
-            : $('#plot-planner-api-model-select').val();
+        const model = getCurrentApiModel();
 
         const body = {
             model: model || 'gpt-3.5-turbo',
@@ -1325,7 +1389,6 @@
 
     // ===== 阶段1: 生成草案 =====
     async function handleGenerateDraft() {
-        saveCurrentProfile(); // 点击生成时自动保存一下当前配置
         const direction = $('#plot-planner-direction').val();
         const nodeCount = normalizeTaskNodeCount($('#plot-planner-node-count').val());
         $('#plot-planner-node-count').val(nodeCount);
@@ -1347,8 +1410,11 @@
             $('#plot-planner-chat-history').empty();
             appendMiniChat('ai', response);
             $('#plot-planner-chat-input, #plot-planner-chat-send, #plot-planner-breakdown, #plot-planner-rebreakdown').prop('disabled', false);
+            $('#plot-planner-clear-draft, #plot-planner-regenerate-tasks').prop('disabled', false);
+            $('#plot-planner-breakdown').toggle(currentTasks.length === 0);
+            $('#plot-planner-rebreakdown').hide();
             $('#plot-planner-config-section').removeAttr('open');
-            savePlannerState();
+            savePlanningState();
         } catch (error) {
             showError('生成草案失败', error, handleGenerateDraft);
         } finally {
@@ -1390,7 +1456,7 @@ ${PLOT_OUTLINE_FORMAT_PROMPT}`;
             currentDraft = response;
             appendMiniChat('ai', response);
             miniChatHistory.push({ role: 'ai', content: response });
-            savePlannerState();
+            savePlanningState();
         } catch (error) {
             showError('修改大纲失败', error, () => handleChatSend(text));
         } finally {
@@ -1399,13 +1465,33 @@ ${PLOT_OUTLINE_FORMAT_PROMPT}`;
     }
 
     // ===== 阶段2: 拆解任务 =====
-    async function handleBreakdown() {
+    function handleRegenerateTaskChain() {
+        if (!currentDraft) {
+            notify('warning', '当前没有可用于拆解的剧情草案。');
+            switchTab('plot-planner-tab-planning');
+            return;
+        }
+        if (currentTasks.length > 0 && !confirm('API 重新生成会在成功后替换当前任务链和执行进度。继续吗？')) return;
+        handleBreakdown({ replaceExisting: currentTasks.length > 0 });
+    }
+
+    async function handleBreakdown({ replaceExisting = false } = {}) {
+        if (!currentDraft) {
+            notify('warning', '当前没有可用于拆解的剧情草案。');
+            return;
+        }
+        if (currentTasks.length > 0 && !replaceExisting) {
+            handleRegenerateTaskChain();
+            return;
+        }
         try {
             setBusyButton('#plot-planner-breakdown', true, '拆解中...');
             setBusyButton('#plot-planner-rebreakdown', true, '重新拆解中...');
+            setBusyButton('#plot-planner-regenerate-tasks', true, 'API 生成中...');
             const nodeCount = normalizeTaskNodeCount($('#plot-planner-node-count').val());
             const responseLength = getBreakdownResponseLength(nodeCount);
             $('#plot-planner-node-count').val(nodeCount);
+            savePlanningState();
             const breakdownSystemPrompt = $('#plot-planner-breakdown-prompt').val().trim() || DEFAULT_BREAKDOWN_SYSTEM_PROMPT;
             const prompt = `请把下面“最终敲定的剧情规划”转换成可逐步发送给 SillyTavern 主聊天 AI 执行的任务 JSON。
 
@@ -1441,27 +1527,44 @@ ${currentDraft}`;
             if (!Array.isArray(tasks) || tasks.length === 0) {
                 throw new Error('模型没有返回有效任务');
             }
-            currentTasks = tasks.map((task, index) => ({
+            const nextTasks = tasks.map((task, index) => ({
                 title: String(task.title || `任务 ${index + 1}`).trim(),
                 summary: String(task.summary || '').trim(),
                 completionCriteria: String(task.completionCriteria || '该节点最近一步核心事件已经在角色回复中明确发生；完成时只输出一次 <complete></complete>。').trim(),
                 status: 'pending'
             })).filter(task => task.title || task.summary);
+            if (nextTasks.length === 0) {
+                throw new Error('模型返回的任务内容为空');
+            }
+
+            currentTasks = nextTasks;
             activeTaskIndex = -1;
+            isExecutionPaused = false;
+            updatePauseButton();
             renderTasks();
-            savePlannerState();
+            updatePromptInjection();
+            saveTaskState();
 
             switchTab('plot-planner-tab-execution');
             $('#plot-planner-start').show();
             $('#plot-planner-breakdown').hide();
             $('#plot-planner-rebreakdown').hide();
+            $('#plot-planner-clear-tasks').prop('disabled', false);
+            notify('success', replaceExisting ? `已重新生成 ${currentTasks.length} 个任务节点。` : `已生成 ${currentTasks.length} 个任务节点。`);
         } catch (error) {
-            showError('拆解任务失败，请点击“重新拆解剧情”发起一次全新的任务拆解请求', error, null);
-            $('#plot-planner-breakdown').hide();
-            $('#plot-planner-rebreakdown').show();
+            const message = replaceExisting
+                ? '重新生成任务链失败，原任务链和执行进度已保留'
+                : '拆解任务失败，可重新发起完整拆解请求';
+            showError(message, error, () => handleBreakdown({ replaceExisting }));
+            if (!currentTasks.length) {
+                $('#plot-planner-breakdown').hide();
+                $('#plot-planner-rebreakdown').show();
+            }
         } finally {
             setBusyButton('#plot-planner-breakdown', false, '敲定并拆解任务');
             setBusyButton('#plot-planner-rebreakdown', false, '重新拆解剧情');
+            setBusyButton('#plot-planner-regenerate-tasks', false, 'API 重新生成任务链');
+            $('#plot-planner-regenerate-tasks').prop('disabled', !currentDraft);
         }
     }
 
@@ -1506,12 +1609,13 @@ ${currentDraft}`;
             const idx = $(this).data('index');
             const field = $(this).data('field');
             if (currentTasks[idx] && field) currentTasks[idx][field] = $(this).val();
-            savePlannerState();
+            saveTaskState();
         });
 
         const hasActiveTask = activeTaskIndex >= 0 && activeTaskIndex < currentTasks.length;
         $('#plot-planner-prev').prop('disabled', activeTaskIndex <= 0);
         $('#plot-planner-complete, #plot-planner-skip, #plot-planner-pause').prop('disabled', !hasActiveTask);
+        $('#plot-planner-clear-tasks').prop('disabled', currentTasks.length === 0);
     }
 
     // ===== 注入与清理 Prompt =====
@@ -1566,7 +1670,7 @@ ${currentTask.completionCriteria}
         switchTab('plot-planner-tab-execution');
         toggleModal();
         updatePromptInjection();
-        savePlannerState();
+        saveTaskState();
         if (typeof toastr !== 'undefined') {
             toastr.success("🗺️ 剧情规划已启动！当前执行：任务 1", "Plot Planner");
         }
@@ -1583,7 +1687,7 @@ ${currentTask.completionCriteria}
         updatePauseButton();
         renderTasks();
         updatePromptInjection();
-        savePlannerState();
+        saveTaskState();
     }
 
     function completeCurrentTask(status = 'completed') {
@@ -1601,14 +1705,14 @@ ${currentTask.completionCriteria}
         }
         renderTasks();
         updatePromptInjection();
-        savePlannerState();
+        saveTaskState();
     }
 
     function toggleExecutionPause() {
         isExecutionPaused = !isExecutionPaused;
         updatePauseButton();
         updatePromptInjection();
-        savePlannerState();
+        saveTaskState();
     }
 
     function updatePauseButton() {
@@ -1624,33 +1728,69 @@ ${currentTask.completionCriteria}
         updatePauseButton();
         renderTasks();
         updatePromptInjection();
-        savePlannerState();
+        saveTaskState();
         notify('info', '剧情规划已停止，任务清单仍保留。');
     }
 
-    function clearPlanner() {
+    function resetPlanningUi() {
+        $('#plot-planner-chat-history').empty().append(
+            $('<div>').addClass('chat-message system-msg').text('请在上方输入设定并点击"生成草案"，AI将为你构思带转折的剧情大纲。')
+        );
+        $('#plot-planner-chat-input').val('');
+        $('#plot-planner-chat-input, #plot-planner-chat-send, #plot-planner-breakdown, #plot-planner-rebreakdown').prop('disabled', true);
+        $('#plot-planner-clear-draft, #plot-planner-regenerate-tasks').prop('disabled', true);
+        $('#plot-planner-breakdown').show();
+        $('#plot-planner-rebreakdown').hide();
+    }
+
+    function resetTaskUi() {
+        $('#plot-planner-start').hide();
+        $('#plot-planner-clear-tasks').prop('disabled', true);
+        updatePauseButton();
+        renderTasks();
+        updatePromptInjection();
+    }
+
+    function clearPlanningState() {
+        if ((currentDraft || miniChatHistory.length) && !confirm('只清空当前剧情草案和商讨记录？现有任务链会保留。')) return;
+        currentDraft = '';
+        miniChatHistory = [];
+        lastFailedAction = null;
+        resetPlanningUi();
+        $('#plot-planner-error').hide();
+        savePlanningState();
+        notify('info', '已清空剧情草案；任务链和 API 配置均未改变。');
+    }
+
+    function clearTaskState() {
+        if (currentTasks.length && !confirm('只清空当前任务链和执行进度？剧情草案会保留。')) return;
+        currentTasks = [];
+        activeTaskIndex = -1;
+        isExecutionPaused = false;
+        lastFailedAction = null;
+        resetTaskUi();
+        $('#plot-planner-error').hide();
+        $('#plot-planner-breakdown').toggle(Boolean(currentDraft)).prop('disabled', !currentDraft);
+        $('#plot-planner-regenerate-tasks').prop('disabled', !currentDraft);
+        saveTaskState();
+        notify('info', '已清空任务链和执行进度；剧情草案和 API 配置均未改变。');
+    }
+
+    function clearAllPlannerState() {
+        if ((currentDraft || miniChatHistory.length || currentTasks.length) && !confirm('清空剧情草案、商讨记录、任务链和执行进度？API 配置不会改变。')) return;
         currentDraft = '';
         miniChatHistory = [];
         currentTasks = [];
         activeTaskIndex = -1;
         isExecutionPaused = false;
         lastFailedAction = null;
-
-        $('#plot-planner-chat-history').empty().append(
-            $('<div>').addClass('chat-message system-msg').text('请在上方输入设定并点击"生成草案"，AI将为你构思带转折的剧情大纲。')
-        );
-        $('#plot-planner-chat-input').val('');
-        $('#plot-planner-chat-input, #plot-planner-chat-send, #plot-planner-breakdown, #plot-planner-rebreakdown').prop('disabled', true);
+        resetPlanningUi();
+        resetTaskUi();
         $('#plot-planner-error').hide();
         switchTab('plot-planner-tab-planning');
-        $('#plot-planner-start').hide();
-        $('#plot-planner-breakdown').show();
-        $('#plot-planner-rebreakdown').hide();
-        updatePauseButton();
-        renderTasks();
-        updatePromptInjection();
-        savePlannerState();
-        notify('info', '已清空剧情规划和任务链，可重新生成或切换任务。');
+        savePlanningState();
+        saveTaskState();
+        notify('info', '已清空剧情草案和任务链；API 配置未改变。');
     }
 
     function onMessageReceived(messageId) {

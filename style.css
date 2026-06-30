@@ -401,6 +401,37 @@
     border-bottom: 1px solid #3a3a42;
 }
 
+.context-filter-row {
+    align-items: flex-start;
+    margin-top: 10px;
+}
+
+.context-filter-fields {
+    flex: 1;
+    min-width: 0;
+}
+
+.context-filter-fields > input[type="text"] {
+    width: 100%;
+    margin-top: 6px;
+}
+
+.plot-planner-help {
+    margin-top: 5px;
+    color: #888;
+    font-size: 0.8rem;
+}
+
+.planning-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.planning-actions .plot-btn {
+    flex: 1 1 0;
+}
+
 .context-builder-title {
     margin-bottom: 8px;
     color: #e0e0e0;
@@ -669,6 +700,10 @@
         flex: 1 1 calc(50% - 8px);
         padding: 6px 10px;
         font-size: 0.85rem;
+    }
+
+    .planning-actions {
+        flex-direction: column;
     }
 
     .auto-judge-toggle {
